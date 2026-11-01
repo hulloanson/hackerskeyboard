@@ -24,6 +24,7 @@ ROOT_FREE_INODES_RESERVE = 50_000
 WORKSPACE_FREE_INODES_RESERVE = 100_000
 POLL_SECONDS = 2.0
 TERM_GRACE_SECONDS = 10.0
+POST_COMMAND_CHILD_GRACE_SECONDS = 5.0
 
 
 class ResourceError(RuntimeError):
@@ -510,7 +511,11 @@ def _stop_process_tree(
             _refresh_descendants(tracked)
         except ResourceError as exc:
             print(f"resource guard: cannot refresh child list during cleanup: {exc}", file=sys.stderr, flush=True)
-        if signum in {signal.SIGTERM, signal.SIGKILL}:
+        active_group_members = [
+            identity for identity, record in tracked.items()
+            if record.process_group == proc.pid and _record_is_live(identity)
+        ]
+        if signum in {signal.SIGTERM, signal.SIGKILL} and active_group_members:
             try:
                 os.killpg(proc.pid, signum)
             except ProcessLookupError:
@@ -518,8 +523,8 @@ def _stop_process_tree(
             except OSError as exc:
                 print(f"resource guard: cannot signal child process group {proc.pid}: {exc}", file=sys.stderr, flush=True)
         for identity in tuple(tracked):
-            if identity.pid == proc.pid and signum == signal.SIGTERM:
-                # The leader was covered by SIGTERM to its process group.
+            if identity in active_group_members and signum in {signal.SIGTERM, signal.SIGKILL}:
+                # This process was covered by the signal to its verified group.
                 signaled.add(identity)
                 continue
             try:
@@ -562,6 +567,7 @@ def run_command(
     checker: Callable[[Sequence[str]], ResourceState] = check_resources,
     poll_seconds: float = POLL_SECONDS,
     term_grace_seconds: float = TERM_GRACE_SECONDS,
+    child_exit_grace_seconds: float = POST_COMMAND_CHILD_GRACE_SECONDS,
 ) -> int:
     if not command:
         raise ResourceError("run requires a command after --")
@@ -589,6 +595,7 @@ def run_command(
         _restore_child_subreaper(previous_subreaper)
         raise
     tracked: dict[ProcessIdentity, ProcessRecord] = {}
+    command_exit_time: float | None = None
     try:
         while True:
             if requested_signal is not None:
@@ -614,8 +621,24 @@ def run_command(
             if return_code is not None and not active_descendants:
                 _reap_adopted_children(tracked, proc.pid)
                 return return_code
+            if return_code is not None:
+                if command_exit_time is None:
+                    command_exit_time = time.monotonic()
+                elif time.monotonic() - command_exit_time >= child_exit_grace_seconds:
+                    print(
+                        f"resource guard: {label} exited with descendants still active; "
+                        f"cleaning up after {child_exit_grace_seconds:g}s",
+                        file=sys.stderr,
+                        flush=True,
+                    )
+                    _stop_process_tree(proc, tracked, term_grace_seconds)
+                    return return_code
             if poll_seconds > 0:
-                time.sleep(poll_seconds)
+                sleep_for = poll_seconds
+                if return_code is not None and command_exit_time is not None:
+                    remaining = command_exit_time + child_exit_grace_seconds - time.monotonic()
+                    sleep_for = max(0.01, min(sleep_for, remaining))
+                time.sleep(sleep_for)
             else:
                 time.sleep(0.01)
     except KeyboardInterrupt:

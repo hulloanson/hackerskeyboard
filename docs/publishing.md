@@ -128,3 +128,5 @@ This fork uses the distinct Android application ID `com.hulloanson`, so it can b
 ## Optional GitHub Pages API helper
 
 The selected raw endpoint does not need Pages configuration. If hosting later moves to GitHub Pages, scripts/github_publish.py pages-enable configures branch main at /, and pages-wait reports the HTTPS site URL. API writes need a token from HK_GITHUB_TOKEN_FILE (a mode 0600 file outside both repositories) or HK_GITHUB_TOKEN; the script never accepts tokens in arguments or logs them. GitHub documents Pages: write and Administration: write for configuring a site with a fine-grained token. See [GitHub's Pages REST API permissions](https://docs.github.com/en/rest/pages/pages).
+
+The APK signer uses the PKCS#12 store password for its private key automatically. Passing the same one-line password file for both password options makes apksigner consume that file twice and reach EOF; the script supplies the store password once. V4 sidecar generation is disabled because F-Droid distributes the APK itself.

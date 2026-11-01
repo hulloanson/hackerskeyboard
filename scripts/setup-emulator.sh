@@ -31,6 +31,28 @@ else
     "$AVDMANAGER" create avd --name "$AVD_NAME" --package "$IMAGE" --device pixel_2 --force
 fi
 
+python3 - "$AVD_PATH/config.ini" <<'PY'
+from pathlib import Path
+import sys
+
+config = Path(sys.argv[1])
+settings = {"hw.ramSize": "1536", "vm.heapSize": "128M"}
+lines = config.read_text(encoding="utf-8").splitlines()
+seen = set()
+updated = []
+for line in lines:
+    key, separator, _value = line.partition("=")
+    if separator and key in settings:
+        updated.append(f"{key}={settings[key]}")
+        seen.add(key)
+    else:
+        updated.append(line)
+for key, value in settings.items():
+    if key not in seen:
+        updated.append(f"{key}={value}")
+config.write_text("\n".join(updated) + "\n", encoding="utf-8")
+PY
+
 [[ -x "$HK_ANDROID_SDK_ROOT/emulator/emulator" ]] || fail "emulator binary is missing after SDK installation"
 [[ -x "$HK_ANDROID_SDK_ROOT/platform-tools/adb" ]] || fail "adb is missing after SDK installation"
 [[ -f "$AVD_PATH/config.ini" ]] || fail "AVD config is missing after creation"

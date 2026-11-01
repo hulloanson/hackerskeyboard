@@ -331,7 +331,7 @@ def sign_apk(unsigned_apk: pathlib.Path, output: pathlib.Path | None) -> None:
         guarded(
             [str(apksigner), "sign", "--ks", str(keystore), "--ks-type", "PKCS12",
              "--ks-key-alias", alias, "--ks-pass", f"file:{password}",
-             "--key-pass", f"file:{password}", "--out", str(temporary), str(unsigned_apk)],
+             "--v4-signing-enabled", "false", "--out", str(temporary), str(unsigned_apk)],
             "sign release APK",
             (sdk, output.parent, home),
         )

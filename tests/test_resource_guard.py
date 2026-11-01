@@ -195,6 +195,42 @@ class ResourceGuardTests(unittest.TestCase):
             self.assertTrue(ready_marker.exists(), "double-forked daemon did not start")
             self.assertTrue(term_marker.exists(), "double-forked daemon did not receive SIGTERM")
 
+    def test_finished_command_cleans_up_lingering_daemon_and_preserves_exit_code(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            ready_marker = root / "daemon-ready"
+            term_marker = root / "daemon-term"
+            daemon_code = (
+                "import os,pathlib,signal,time\n"
+                "os.setsid()\n"
+                "child=os.fork()\n"
+                "if child: os._exit(0)\n"
+                f"signal.signal(signal.SIGTERM, lambda *_: (pathlib.Path({str(term_marker)!r}).write_text('term'), os._exit(0)))\n"
+                f"pathlib.Path({str(ready_marker)!r}).write_text('ready')\n"
+                "time.sleep(60)\n"
+            )
+            command_code = (
+                "import pathlib,subprocess,sys,time\n"
+                f"subprocess.Popen([sys.executable,'-c',{daemon_code!r}])\n"
+                f"ready=pathlib.Path({str(ready_marker)!r})\n"
+                "deadline=time.monotonic()+2\n"
+                "while not ready.exists() and time.monotonic()<deadline: time.sleep(.01)\n"
+                "raise SystemExit(23)\n"
+            )
+            good_state = guard.ResourceState(8 * guard.GIB, 8 * guard.GIB, "test", ())
+            result = guard.run_command(
+                [sys.executable, "-c", command_code],
+                label="test normal exit cleanup",
+                paths=[str(root)],
+                checker=lambda _paths: good_state,
+                poll_seconds=0.02,
+                term_grace_seconds=1,
+                child_exit_grace_seconds=0.05,
+            )
+            self.assertEqual(result, 23, "cleanup must preserve the command's own exit code")
+            self.assertTrue(ready_marker.exists(), "double-forked daemon did not start")
+            self.assertTrue(term_marker.exists(), "lingering daemon was not cleaned up after command exit")
+
     def test_wrapper_sigterm_is_forwarded_to_child_group(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = pathlib.Path(temporary)
