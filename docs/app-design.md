@@ -101,16 +101,23 @@ widths total 100 percent before and after merging Tab into Space, and that the
 source layout contains both affected web-entry rows. The Android
 instrumentation matrix is
 `app/src/androidTest/java/org/pocketworkstation/pckeyboard/DvorakPortraitTabInstrumentationTest.java`;
-it constructs the real `LatinKeyboard` for English Dvorak and QWERTY in both
-orientations and checks Tab visibility across all alphabet modes plus Space
-width in both web-entry modes.
+it constructs the real `LatinKeyboard` for English Dvorak in both orientations
+and for QWERTY in both orientations, then checks Tab visibility across all
+alphabet modes plus Space width in both web-entry modes.
+Run `scripts/setup-emulator.sh` once and then `scripts/smoke-android.sh` for the
+guarded API 35 run. It builds the test APKs first, then starts the emulator and
+foreground ADB server under a separate guard, runs the matrix, enables the
+debug IME with `en-DV`, and captures portrait/landscape screenshots under
+`.local/build-tools/tmp`. When KVM is unavailable to the current user, the
+script falls back to software emulation without changing device permissions.
 
 ## Validation still required
 
 - Run the guarded Gradle build and resolve compiler/resource errors before
   signing or publication.
 - Run the guarded API 35 emulator instrumentation matrix once the toolchain
-  has provisioned an emulator and system image.
+  has provisioned an emulator and system image (`scripts/setup-emulator.sh`
+  and `scripts/smoke-android.sh`).
 - Inspect the merged manifest and APK package ID; verify native libraries for
   expected ABIs and 16 KB page-size compatibility.
 - Exercise Dvorak portrait and landscape, both web-entry modes with and

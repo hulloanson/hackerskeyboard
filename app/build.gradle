@@ -15,6 +15,7 @@ android {
         versionCode 1041002
         versionName '1.41.2-hulloanson'
         testInstrumentationRunner 'android.test.InstrumentationTestRunner'
+        testApplicationId 'com.hulloanson.test'
 
         externalNativeBuild {
             cmake {
@@ -50,4 +51,7 @@ android {
 dependencies {
     implementation fileTree(include: ['*.jar'], dir: 'libs')
     implementation 'com.android.support:support-compat:28.0.0'
+    androidTestCompileOnly files(
+            "${android.sdkDirectory}/platforms/${android.compileSdkVersion}/optional/android.test.base.jar",
+            "${android.sdkDirectory}/platforms/${android.compileSdkVersion}/optional/android.test.runner.jar")
 }

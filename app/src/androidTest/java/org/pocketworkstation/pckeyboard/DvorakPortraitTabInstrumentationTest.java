@@ -81,19 +81,24 @@ public class DvorakPortraitTabInstrumentationTest extends InstrumentationTestCas
         }
     }
 
-    public void testQwertyPortraitKeepsTabInBothWebModes() {
+    public void testQwertyKeepsTabInBothOrientationsAndWebModes() {
         int[] webModes = {
                 KeyboardSwitcher.KEYBOARDMODE_WEB,
                 KeyboardSwitcher.KEYBOARDMODE_WEB_WITH_SETTINGS_KEY
         };
+        int[] orientations = {
+                Configuration.ORIENTATION_PORTRAIT,
+                Configuration.ORIENTATION_LANDSCAPE
+        };
         int tabCode = getInstrumentation().getTargetContext().getResources()
                 .getInteger(R.integer.key_tab);
 
-        for (int mode : webModes) {
-            LatinKeyboard qwerty = createKeyboard("US",
-                    Configuration.ORIENTATION_PORTRAIT, mode);
-            assertEquals("QWERTY portrait mode " + mode, 1,
-                    countKeys(qwerty, tabCode));
+        for (int orientation : orientations) {
+            for (int mode : webModes) {
+                LatinKeyboard qwerty = createKeyboard("US", orientation, mode);
+                assertEquals("QWERTY orientation " + orientation + " mode " + mode,
+                        1, countKeys(qwerty, tabCode));
+            }
         }
     }
 
