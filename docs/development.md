@@ -2,14 +2,14 @@
 
 ## Current status
 
-The user resumed autonomous implementation after the tmux pause. Documentation is initialized; implementation, guarded build setup, signing, and publication are in progress. The fork application ID must be `com.hulloanson`. At initialization `.gitignore` had a user change and `Vagrantfile` was untracked; preserve them. Update the status as checkpoints complete.
+The user resumed autonomous implementation after the tmux pause. Documentation, the initial app changes, and resource guard/build scripts are implemented. Toolchain installation, compiled/device validation, signing, and publication are in progress. See [build.md](build.md) and [app-design.md](app-design.md) for current decisions. The fork application ID must be `com.hulloanson`. At initialization `.gitignore` had a user change and `Vagrantfile` was untracked; preserve them. Update the status as checkpoints complete.
 
 ## Project and checkout
 
 - This is the `hulloanson/hackerskeyboard` fork. The `origin` remote points to that repository; `upstream` points to `klausw/hackerskeyboard`.
 - The project is an old Android soft keyboard based on the Gingerbread AOSP keyboard. The existing README warns that it uses an old Android API level and has compatibility limitations. Keep that warning intact unless a later task specifically changes it.
 - The upstream app ID is `org.pocketworkstation.pckeyboard`; this fork will use `com.hulloanson`; the current app version is `v1.41.1` / version code `1041001`.
-- The build uses the Android Gradle plugin `3.2.1`, `compileSdkVersion 26`, `minSdkVersion 14`, `targetSdkVersion 26`, Android support libraries, and an external CMake native build. The root Gradle files currently declare Google and JCenter repositories. The checked-in Gradle settings set a 1536 MB JVM heap. These are observed project settings, not a validated current toolchain recipe. Inspect the historical build guidance in `README-hackerskeyboard.txt` and the actual environment before deciding what tools to install. Do not invent a modernized build prescription in advance.
+- The upstream baseline build used the Android Gradle plugin `3.2.1`, `compileSdkVersion 26`, `minSdkVersion 14`, `targetSdkVersion 26`, Android support libraries, and an external CMake native build. The root Gradle files currently declare Google and JCenter repositories. The checked-in Gradle settings set a 1536 MB JVM heap. These are observed project settings, not a validated current toolchain recipe. Inspect the historical build guidance in `README-hackerskeyboard.txt` and the actual environment before deciding what tools to install. Do not invent a modernized build prescription in advance.
 - Java code is under `app/src/main/java/org/pocketworkstation/pckeyboard/`; native dictionary code and CMake configuration are under `app/src/main/cpp/` and `app/CMakeLists.txt`. Keyboard layouts are Android XML resources under `app/src/main/res/xml*`.
 - The existing historical build and contribution guidance is in `README-hackerskeyboard.txt`; it links to the upstream source build wiki and includes the upstream contact address. The public user guide, FAQ, issue tracker, and release notes remain linked from `README.md`.
 

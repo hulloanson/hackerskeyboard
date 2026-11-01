@@ -15,3 +15,8 @@ gradle
 # Local toolchains, build caches, and separate F-Droid checkout
 /.local/
 /repo_publish/
+
+# Generated Python and native build intermediates
+__pycache__/
+*.py[cod]
+.cxx/

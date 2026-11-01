@@ -1,4 +1,10 @@
-## Overview ##
+# Hacker's Keyboard — hulloanson fork
+
+This fork uses application ID `com.hulloanson`, supports Android 8.0 and newer, and targets Android 15. It removes the Tab key beside Space for English Dvorak in portrait orientation and gives that space to the Space key. Landscape and other layouts retain Tab. Build and device validation are in progress.
+
+See [build scripts and resource guards](docs/build.md), [app design](docs/app-design.md), and the [development status](docs/development.md).
+
+## Upstream overview (historical) ##
 
 **WARNING:** *This is a rather ancient project that was originally developed back in 2011 based on the Android 2.3 (Gingerbread) AOSP keyboard. While it still works as-is for many users, it would need some major rewrites to work with newer APIs, and some features such as language switching or popup keys don't work right on modern Android systems. I'm not currently planning on significant updates, and it's possible that it will stop working on modern devices or will no longer be updateable via the Google Play store due to minimum API level requirements. Play Store requires targeting API level 29 (Android 10), while the code was written for API level 9 (Android 2.3) from 2011.*
 
@@ -38,4 +44,4 @@ Application developers: see [the page about keyboard support in applications](ht
 
 ## Development
 
-This fork is being prepared for a small keyboard layout change: hide the Tab key beside Space only for English Dvorak in portrait orientation. The fork uses Android application ID `com.hulloanson`. The release plan also includes a signed F-Droid build, with Android SDK compatibility and update behavior to be reviewed. The behavior and release workflow are not implemented yet. See the [development guide](docs/development.md) for repository context, decisions, security requirements, and the outstanding checklist. Contributors should also read [AGENTS.md](AGENTS.md).
+Source changes and guarded build scripts are implemented; build/device validation and the signed F-Droid release are in progress. See the [development guide](docs/development.md) for repository context, decisions, security requirements, and the outstanding checklist. Contributors should also read [AGENTS.md](AGENTS.md).
