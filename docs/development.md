@@ -1,0 +1,45 @@
+# Development guide
+
+## Current status
+
+The user resumed autonomous implementation after the tmux pause. Documentation is initialized; implementation, guarded build setup, signing, and publication are in progress. The fork application ID must be `com.hulloanson`. At initialization `.gitignore` had a user change and `Vagrantfile` was untracked; preserve them. Update the status as checkpoints complete.
+
+## Project and checkout
+
+- This is the `hulloanson/hackerskeyboard` fork. The `origin` remote points to that repository; `upstream` points to `klausw/hackerskeyboard`.
+- The project is an old Android soft keyboard based on the Gingerbread AOSP keyboard. The existing README warns that it uses an old Android API level and has compatibility limitations. Keep that warning intact unless a later task specifically changes it.
+- The upstream app ID is `org.pocketworkstation.pckeyboard`; this fork will use `com.hulloanson`; the current app version is `v1.41.1` / version code `1041001`.
+- The build uses the Android Gradle plugin `3.2.1`, `compileSdkVersion 26`, `minSdkVersion 14`, `targetSdkVersion 26`, Android support libraries, and an external CMake native build. The root Gradle files currently declare Google and JCenter repositories. The checked-in Gradle settings set a 1536 MB JVM heap. These are observed project settings, not a validated current toolchain recipe. Inspect the historical build guidance in `README-hackerskeyboard.txt` and the actual environment before deciding what tools to install. Do not invent a modernized build prescription in advance.
+- Java code is under `app/src/main/java/org/pocketworkstation/pckeyboard/`; native dictionary code and CMake configuration are under `app/src/main/cpp/` and `app/CMakeLists.txt`. Keyboard layouts are Android XML resources under `app/src/main/res/xml*`.
+- The existing historical build and contribution guidance is in `README-hackerskeyboard.txt`; it links to the upstream source build wiki and includes the upstream contact address. The public user guide, FAQ, issue tracker, and release notes remain linked from `README.md`.
+
+## Requested keyboard behavior
+
+The intended change is to hide the Tab key next to Space only when the selected input layout is English Dvorak and the keyboard is in portrait orientation. It should remain available in Dvorak landscape and in non-Dvorak layouts. The existing QWERTY and Dvorak layout resources are `app/src/main/res/xml-en/kbd_qwerty.xml` and `app/src/main/res/xml-en-rDV/kbd_qwerty.xml`. The Dvorak XML has Tab keys in its web-entry bottom rows, including the variant with a settings key. `KeyboardSwitcher` selects layout XML using the input locale's qualified resources; its `KeyboardId` currently has a comment noting that orientation is not part of the key. Treat these as implementation starting points, not a decision on the code design. Review all affected keyboard modes and keyboard recreation behavior before choosing how to express the portrait-only condition.
+
+## Collaboration and review
+
+- Requested lead/reviewer/orchestrator: GPT-6.1 Sol, medium reasoning, with responsibility for review, coordination, and minor fixes. Requested implementors: GPT-6.1 Luna, xhigh reasoning. The dispatcher exposes `gpt-6-luna`; this is the available identifier and should not be represented as verified equivalence to a requested GPT-6.1 alias. The active lead model is not guaranteed by the dispatcher, so describe the role as requested rather than verified runtime state.
+- Work in small checkpoints and keep changes reviewable. The user prefers frequent commits and pushes; use the `/c` workflow for commits. Codex attribution is allowed. Keep generated artifacts and secrets out of commits.
+
+## Build, signing, and F-Droid design constraints
+
+- The user wants `minSdkVersion` raised from 14 to a newer value to support the intended F-Droid update experience. The new minimum is undecided: choose it only after reviewing device compatibility and the app's legacy APIs. Modernize `targetSdkVersion` and `compileSdkVersion`/toolchain alongside this work. Raising minSdk alone does not enable unattended updates. Android's [`PackageInstaller.SessionParams#setRequireUserAction`](https://developer.android.com/reference/android/content/pm/PackageInstaller.SessionParams#setRequireUserAction(int)) documents separate requirements for no-user-action installs, including an OS-dependent target API threshold, installer ownership, and `UPDATE_PACKAGES_WITHOUT_USER_ACTION` permission. Verify the current F-Droid client's behavior and supported Android versions before promising automatic updates.
+- All future environment setup, downloads, builds, signing, repository indexing, and publishing steps must be executable scripts. Do not create scripts that are placeholders or cannot run end to end.
+- Before and during each resource-intensive step, guards must check available memory from both cgroups and the host, plus filesystem free bytes and free inodes. Unknown limits must fail closed. Document concrete safety reserves before implementation; bound worker counts and JVM memory; stop child process trees if thresholds are crossed. Guards must cover installation/download, build, signing, index generation, and publish staging. This is a requirement, not implemented behavior.
+- The main app signing key and the F-Droid repository/index signing key are separate. Store both outside the tracked app repository and `repo_publish/`, back them up, and reuse them for later updates; never regenerate a key to update an existing APK or repository. A different signer cannot update the original package in place. This fork uses the separate package ID `com.hulloanson`, so it can coexist with the original; updates to this fork require its persistent signing key.
+- The intended repository checkout is `hulloanson/fdroid_repo` in `./repo_publish/`. The user reports that it is empty and has no commits; verify its actual state on first clone before initializing it. Add an ignore rule for `repo_publish/` before cloning, and keep its contents out of the main repository's commits.
+- Hosting is undecided and needs investigation. A clone alone is not a reachable F-Droid repository, and GitHub Pages must not be assumed to be enabled. Publishing is complete only after the repository is served at a verified HTTPS URL and its signing fingerprint is available to clients.
+- Never store a PAT, password, signing secret, private key, or credential-bearing URL in documentation, scripts, Git remotes, or logs. Use external credential/key storage and avoid printing secrets in command output.
+
+## Future checklist
+
+- [ ] Review the affected Dvorak layout modes and locale/orientation refresh lifecycle; settle and document the implementation approach.
+- [ ] Add the root ignore rule for `repo_publish/`, clone `hulloanson/fdroid_repo` there, and verify its initial state without creating commits in the main repository.
+- [ ] Inspect available memory, cgroup limits, filesystem bytes/inodes, existing build guidance, and installed toolchain before selecting build dependencies. Document safety reserves and implement fail-closed guards first.
+- [ ] Choose a higher `minSdkVersion` after compatibility review; modernize target/compile SDK and build tooling. Check current Android no-user-action install requirements and F-Droid client update behavior instead of treating minSdk as sufficient.
+- [ ] Add executable, guarded scripts for dependency installation/download and building. Bound Gradle workers and JVM memory using the documented resource limits.
+- [ ] Implement the portrait-only Tab change for English Dvorak, preserving Dvorak landscape and all other layouts; verify the behavior across affected input modes and orientation changes.
+- [ ] Arrange and back up separate app and F-Droid repository signing keys outside both repositories. Build and sign the APK with the persistent app key, then verify the artifact and document the install consequence for users with the official signer.
+- [ ] Implement guarded scripts to initialize/update the F-Droid index and stage/publish the APK. Decide and verify HTTPS hosting and make the repository signing fingerprint available.
+- [ ] Review the scripts, resource guard behavior, generated files, docs, and remote repository state before frequent commits/pushes. Keep app source, signing material, generated build output, and `repo_publish/` separate from the tracked documentation and app source.

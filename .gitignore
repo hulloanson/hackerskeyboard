@@ -11,3 +11,7 @@
 /captures
 gradle
 .externalNativeBuild
+
+# Local toolchains, build caches, and separate F-Droid checkout
+/.local/
+/repo_publish/

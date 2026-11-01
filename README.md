@@ -35,3 +35,7 @@ Comments, requests, or contributions? Join the [discussion group](http://groups.
 Application developers: see [the page about keyboard support in applications](https://github.com/klausw/hackerskeyboard/wiki/KeyboardSupportInApplications) if you want to enable the additional keys in your Android application, the same method also works for hardware USB or Bluetooth keyboards.
 
 ![hk-5row-en-s.png](hk-5row-en-s.png)
+
+## Development
+
+This fork is being prepared for a small keyboard layout change: hide the Tab key beside Space only for English Dvorak in portrait orientation. The fork uses Android application ID `com.hulloanson`. The release plan also includes a signed F-Droid build, with Android SDK compatibility and update behavior to be reviewed. The behavior and release workflow are not implemented yet. See the [development guide](docs/development.md) for repository context, decisions, security requirements, and the outstanding checklist. Contributors should also read [AGENTS.md](AGENTS.md).
