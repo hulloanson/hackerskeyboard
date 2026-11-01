@@ -2,7 +2,7 @@
 
 ## Status and decisions
 
-The persistent app and repository signing keys have been generated, verified, and backed up outside both repositories. No APK has been signed or published yet. The lead agent cloned and bootstrapped repo_publish; it is ignored by the main repository. Keep it out of main-repository commits.
+The persistent app and repository signing keys have been generated, verified, and backed up outside both repositories. Release `1.41.2-hulloanson` (`1041002`) is signed and published in repository commit `79afb30`. Hosted v1/v2 indexes, APK hash, and both signer fingerprints have passed HTTPS verification. The lead agent cloned and bootstrapped repo_publish; it is ignored by the main repository. Keep it out of main-repository commits.
 
 The repository is a signed binary F-Droid repository. Gradle produces an unsigned APK; scripts/signing.py signs it with the persistent app key; fdroidserver update builds and signs the repository indexes with the separate F-Droid key. Only the repo/ output directory is copied into repo_publish/ for Git publication. The private F-Droid workspace, its config.yml, metadata, keystore, and password files stay outside both Git repositories.
 
@@ -10,7 +10,7 @@ The selected public endpoint is:
 
     https://raw.githubusercontent.com/hulloanson/fdroid_repo/main/repo/
 
-The public raw.githubusercontent.com host returned HTTP 200 for the bootstrap README before F-Droid indexes existed. The complete F-Droid `/repo/` endpoint still needs to be checked after the first signed index and APK are published. GitHub Pages is not required. scripts/github_publish.py has optional Pages setup commands for a future hosting change, plus the HTTPS repository verifier used for the selected endpoint.
+The public raw.githubusercontent.com host returned HTTP 200 for the bootstrap README before F-Droid indexes existed. The complete F-Droid `/repo/` endpoint passed hosted index and APK verification after publication. GitHub Pages is not required. scripts/github_publish.py has optional Pages setup commands for a future hosting change, plus the HTTPS repository verifier used for the selected endpoint.
 
 F-Droid metadata uses AutoUpdateMode: None and UpdateCheckMode: None because releases are added from locally built APKs. These fields disable F-Droid server-side automatic build/update checks; they do not disable F-Droid client updates. Each release must have a higher version code and must keep the same app signing key.
 
@@ -130,3 +130,5 @@ This fork uses the distinct Android application ID `com.hulloanson`, so it can b
 The selected raw endpoint does not need Pages configuration. If hosting later moves to GitHub Pages, scripts/github_publish.py pages-enable configures branch main at /, and pages-wait reports the HTTPS site URL. API writes need a token from HK_GITHUB_TOKEN_FILE (a mode 0600 file outside both repositories) or HK_GITHUB_TOKEN; the script never accepts tokens in arguments or logs them. GitHub documents Pages: write and Administration: write for configuring a site with a fine-grained token. See [GitHub's Pages REST API permissions](https://docs.github.com/en/rest/pages/pages).
 
 The APK signer uses the PKCS#12 store password for its private key automatically. Passing the same one-line password file for both password options makes apksigner consume that file twice and reach EOF; the script supplies the store password once. V4 sidecar generation is disabled because F-Droid distributes the APK itself.
+
+Published APK: `com.hulloanson_1041002.apk`, 2,468,391 bytes, SHA-256 `0463876bfc5dab86f4d33fec0cfa5d0012106d50112097a846c4cfb63adb95bf`.

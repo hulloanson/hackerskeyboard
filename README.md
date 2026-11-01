@@ -1,8 +1,20 @@
 # Hacker's Keyboard — hulloanson fork
 
-This fork uses application ID `com.hulloanson`, supports Android 8.0 and newer, and targets Android 15. It removes the Tab key beside Space for English Dvorak in portrait orientation and gives that space to the Space key. Landscape and other layouts retain Tab. Build and device validation are in progress.
+This fork uses application ID `com.hulloanson`, supports Android 8.0 and newer, and targets Android 15. It removes the Tab key beside Space for English Dvorak in portrait orientation and gives that space to the Space key. Landscape and other layouts retain Tab. Release `1.41.2-hulloanson` is built, signed, and published. Hosted indexes, APK integrity, and signing fingerprints are verified; device validation is in progress.
 
 See [build scripts and resource guards](docs/build.md), [app design](docs/app-design.md), and the [development status](docs/development.md).
+
+## Install this fork
+
+In F-Droid, open **Settings > Repositories**, add the following URL, enable the repository, and refresh:
+
+```text
+https://raw.githubusercontent.com/hulloanson/fdroid_repo/main/repo/?fingerprint=77c9d776441463e0a9dc693db49caf81fa553f6fdf6f057ee38914a5e4fbd3bb
+```
+
+Install **Hacker's Keyboard** with package ID `com.hulloanson`, enable the keyboard in Android settings, and select English Dvorak in the keyboard's language settings. This fork can coexist with the original package. F-Droid background updates depend on a compatible client, Android 12 or newer, installer ownership, and the user's update settings.
+
+See [the public repository](https://github.com/hulloanson/fdroid_repo#readme) and [signing and publishing instructions](docs/publishing.md).
 
 ## Upstream overview (historical) ##
 
@@ -44,4 +56,4 @@ Application developers: see [the page about keyboard support in applications](ht
 
 ## Development
 
-Source changes and guarded build scripts are implemented; build/device validation and the signed F-Droid release are in progress. See the [development guide](docs/development.md) for repository context, decisions, security requirements, and the outstanding checklist. Contributors should also read [AGENTS.md](AGENTS.md).
+Source changes, guarded build scripts, signing, and F-Droid publication are implemented. See the development guide for validation coverage. See the [development guide](docs/development.md) for repository context, decisions, security requirements, and the outstanding checklist. Contributors should also read [AGENTS.md](AGENTS.md).

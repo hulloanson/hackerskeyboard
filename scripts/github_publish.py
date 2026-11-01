@@ -37,7 +37,7 @@ class StalePublication(Exception):
 
 
 def fail(message: str) -> "NoReturn":
-    raise SystemExit(f"GitHub Pages: {message}")
+    raise SystemExit(f"GitHub repository: {message}")
 
 
 def token() -> str:
