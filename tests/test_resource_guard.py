@@ -100,6 +100,10 @@ class ResourceGuardTests(unittest.TestCase):
             guard.validate_resources(guard.dataclasses.replace(state, cgroup_available=guard.CGROUP_MEMORY_RESERVE - 1))
         with self.assertRaises(guard.ResourceError):
             guard.validate_resources(guard.dataclasses.replace(
+                state, disks=(guard.dataclasses.replace(disk, free_bytes=disk.bytes_reserve - 1),)
+            ))
+        with self.assertRaises(guard.ResourceError):
+            guard.validate_resources(guard.dataclasses.replace(
                 state, disks=(guard.dataclasses.replace(disk, free_inodes=disk.inodes_reserve - 1),)
             ))
 
@@ -144,6 +148,52 @@ class ResourceGuardTests(unittest.TestCase):
             )
             self.assertEqual(result, 125)
             self.assertTrue(term_marker.exists(), "grandchild did not receive SIGTERM")
+
+    def test_resource_breach_kills_double_forked_setsid_daemon_after_leader_exits(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            ready_marker = root / "daemon-ready"
+            term_marker = root / "daemon-term"
+            daemon_code = (
+                "import os,pathlib,signal,time\n"
+                "os.setsid()\n"
+                "child=os.fork()\n"
+                "if child: os._exit(0)\n"
+                f"signal.signal(signal.SIGTERM, lambda *_: (pathlib.Path({str(term_marker)!r}).write_text('term'), os._exit(0)))\n"
+                f"pathlib.Path({str(ready_marker)!r}).write_text('ready')\n"
+                "time.sleep(60)\n"
+            )
+            command_code = (
+                "import pathlib,subprocess,sys,time\n"
+                f"subprocess.Popen([sys.executable,'-c',{daemon_code!r}])\n"
+                f"ready=pathlib.Path({str(ready_marker)!r})\n"
+                "deadline=time.monotonic()+2\n"
+                "while not ready.exists() and time.monotonic()<deadline: time.sleep(.01)\n"
+            )
+            good_state = guard.ResourceState(8 * guard.GIB, 8 * guard.GIB, "test", ())
+            calls = 0
+
+            def checker(_paths):
+                nonlocal calls
+                calls += 1
+                if calls == 3:
+                    deadline = time.monotonic() + 2
+                    while not ready_marker.exists() and time.monotonic() < deadline:
+                        time.sleep(0.01)
+                    raise guard.ResourceError("simulated reserve breach")
+                return good_state
+
+            result = guard.run_command(
+                [sys.executable, "-c", command_code],
+                label="test detached daemon",
+                paths=[str(root)],
+                checker=checker,
+                poll_seconds=0.05,
+                term_grace_seconds=1,
+            )
+            self.assertEqual(result, 125)
+            self.assertTrue(ready_marker.exists(), "double-forked daemon did not start")
+            self.assertTrue(term_marker.exists(), "double-forked daemon did not receive SIGTERM")
 
     def test_wrapper_sigterm_is_forwarded_to_child_group(self):
         with tempfile.TemporaryDirectory() as temporary:

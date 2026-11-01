@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Fail-closed resource checks and process-group supervision for build scripts."""
+"""Fail-closed resource checks and process-tree supervision for build scripts."""
 
 from __future__ import annotations
 
 import argparse
+import ctypes
 import dataclasses
 import os
 import pathlib
@@ -49,6 +50,20 @@ class ResourceState:
     cgroup_available: int
     cgroup_note: str
     disks: tuple[DiskState, ...]
+
+
+@dataclasses.dataclass(frozen=True, order=True)
+class ProcessIdentity:
+    pid: int
+    start_time: int
+
+
+@dataclasses.dataclass(frozen=True)
+class ProcessRecord:
+    identity: ProcessIdentity
+    parent_pid: int
+    process_group: int
+    state: str
 
 
 def parse_mem_available(meminfo: str) -> int:
@@ -342,38 +357,201 @@ def _format_state(state: ResourceState) -> str:
     )
 
 
-def _stop_process_group(proc: subprocess.Popen[bytes], grace_seconds: float) -> None:
-    # The leader may have exited while a grandchild still occupies its process
-    # group, so signal the group even when proc.poll() already returned a status.
-    if proc.poll() is not None and not _process_group_exists(proc.pid):
+def _read_process_record(pid: int, proc_root: pathlib.Path = pathlib.Path("/proc")) -> ProcessRecord | None:
+    try:
+        stat = (proc_root / str(pid) / "stat").read_text(encoding="ascii")
+    except FileNotFoundError:
+        return None
+    except PermissionError as exc:
+        raise ResourceError(f"cannot inspect child process {pid} under /proc: {exc}") from exc
+    except OSError as exc:
+        # A process can disappear between enumeration and reading its stat file.
+        if not (proc_root / str(pid)).exists():
+            return None
+        raise ResourceError(f"cannot inspect process {pid} under /proc: {exc}") from exc
+    close_paren = stat.rfind(")")
+    if close_paren < 0:
+        raise ResourceError(f"cannot parse /proc/{pid}/stat")
+    fields = stat[close_paren + 1 :].split()
+    if len(fields) < 20:
+        raise ResourceError(f"/proc/{pid}/stat is missing process fields")
+    try:
+        state = fields[0]
+        parent_pid = int(fields[1])
+        process_group = int(fields[2])
+        start_time = int(fields[19])
+    except ValueError as exc:
+        raise ResourceError(f"/proc/{pid}/stat contains invalid process fields") from exc
+    return ProcessRecord(ProcessIdentity(pid, start_time), parent_pid, process_group, state)
+
+
+def _descendant_snapshot(root_pid: int) -> dict[ProcessIdentity, ProcessRecord]:
+    proc_root = pathlib.Path("/proc")
+    try:
+        entries = list(os.scandir(proc_root))
+    except OSError as exc:
+        raise ResourceError(f"cannot enumerate /proc to supervise child processes: {exc}") from exc
+    records: dict[int, ProcessRecord] = {}
+    for entry in entries:
+        if not entry.name.isdigit():
+            continue
+        record = _read_process_record(int(entry.name), proc_root)
+        if record is not None:
+            records[record.identity.pid] = record
+    if root_pid not in records:
+        raise ResourceError(f"cannot inspect supervising process {root_pid} under /proc")
+    children: dict[int, list[ProcessRecord]] = {}
+    for record in records.values():
+        children.setdefault(record.parent_pid, []).append(record)
+    found: dict[ProcessIdentity, ProcessRecord] = {}
+    pending = [root_pid]
+    visited = {root_pid}
+    while pending:
+        parent = pending.pop()
+        for child in children.get(parent, ()):
+            pid = child.identity.pid
+            if pid in visited:
+                continue
+            visited.add(pid)
+            found[child.identity] = child
+            pending.append(pid)
+    return found
+
+
+def _set_child_subreaper(enabled: bool) -> int:
+    """Enable Linux PR_SET_CHILD_SUBREAPER and return the prior state."""
+    libc = ctypes.CDLL(None, use_errno=True)
+    previous = ctypes.c_int()
+    # Linux prctl constants: PR_GET_CHILD_SUBREAPER=37, PR_SET_CHILD_SUBREAPER=36.
+    if libc.prctl(37, ctypes.byref(previous), 0, 0, 0) != 0:
+        error = ctypes.get_errno()
+        raise ResourceError(f"cannot inspect child-subreaper state: {os.strerror(error)}")
+    desired = 1 if enabled else 0
+    if previous.value != desired and libc.prctl(36, desired, 0, 0, 0) != 0:
+        error = ctypes.get_errno()
+        raise ResourceError(f"cannot set child-subreaper state: {os.strerror(error)}")
+    return previous.value
+
+
+def _restore_child_subreaper(previous: int) -> None:
+    libc = ctypes.CDLL(None, use_errno=True)
+    if libc.prctl(36, int(previous != 0), 0, 0, 0) != 0:
+        error = ctypes.get_errno()
+        raise ResourceError(f"cannot restore child-subreaper state: {os.strerror(error)}")
+
+
+def _record_is_live(identity: ProcessIdentity) -> bool:
+    record = _read_process_record(identity.pid)
+    return record is not None and record.identity == identity and record.state != "Z"
+
+
+def _refresh_descendants(tracked: dict[ProcessIdentity, ProcessRecord]) -> None:
+    tracked.update(_descendant_snapshot(os.getpid()))
+
+
+def _signal_process(identity: ProcessIdentity, signum: int) -> None:
+    """Signal one still-matching process, preferring pidfds to avoid PID reuse."""
+    if hasattr(os, "pidfd_open") and hasattr(signal, "pidfd_send_signal"):
+        try:
+            pidfd = os.pidfd_open(identity.pid, 0)
+        except ProcessLookupError:
+            return
+        except OSError as exc:
+            if exc.errno not in {getattr(os, "ENOSYS", 38), 22, 95}:
+                raise ResourceError(f"cannot open process handle for {identity.pid}: {exc}") from exc
+        else:
+            try:
+                record = _read_process_record(identity.pid)
+                if record is None or record.identity != identity or record.state == "Z":
+                    return
+                try:
+                    signal.pidfd_send_signal(pidfd, signum)
+                except ProcessLookupError:
+                    pass
+                except OSError as exc:
+                    raise ResourceError(f"cannot signal child process {identity.pid}: {exc}") from exc
+                return
+            finally:
+                os.close(pidfd)
+    record = _read_process_record(identity.pid)
+    if record is None or record.identity != identity or record.state == "Z":
         return
     try:
-        os.killpg(proc.pid, signal.SIGTERM)
-    except ProcessLookupError:
-        if proc.poll() is None:
-            proc.wait()
-        return
-    deadline = time.monotonic() + grace_seconds
-    while _process_group_exists(proc.pid) and time.monotonic() < deadline:
-        time.sleep(0.1)
-    try:
-        os.killpg(proc.pid, signal.SIGKILL)
+        os.kill(identity.pid, signum)
     except ProcessLookupError:
         pass
+    except OSError as exc:
+        raise ResourceError(f"cannot signal child process {identity.pid}: {exc}") from exc
+
+
+def _reap_adopted_children(tracked: dict[ProcessIdentity, ProcessRecord], leader_pid: int) -> None:
+    for identity in tuple(tracked):
+        if identity.pid == leader_pid:
+            continue
+        try:
+            os.waitpid(identity.pid, os.WNOHANG)
+        except ChildProcessError:
+            # The process is still owned by a live descendant or was already reaped.
+            pass
+        except InterruptedError:
+            pass
+
+
+def _stop_process_tree(
+    proc: subprocess.Popen[bytes],
+    tracked: dict[ProcessIdentity, ProcessRecord],
+    grace_seconds: float,
+) -> None:
+    """Stop the process group and all observed descendants, including detached ones."""
+    signaled: set[ProcessIdentity] = set()
+
+    def send_to_current(signum: int) -> None:
+        try:
+            _refresh_descendants(tracked)
+        except ResourceError as exc:
+            print(f"resource guard: cannot refresh child list during cleanup: {exc}", file=sys.stderr, flush=True)
+        if signum in {signal.SIGTERM, signal.SIGKILL}:
+            try:
+                os.killpg(proc.pid, signum)
+            except ProcessLookupError:
+                pass
+            except OSError as exc:
+                print(f"resource guard: cannot signal child process group {proc.pid}: {exc}", file=sys.stderr, flush=True)
+        for identity in tuple(tracked):
+            if identity.pid == proc.pid and signum == signal.SIGTERM:
+                # The leader was covered by SIGTERM to its process group.
+                signaled.add(identity)
+                continue
+            try:
+                _signal_process(identity, signum)
+            except ResourceError as exc:
+                print(f"resource guard: cannot signal tracked child {identity.pid}: {exc}", file=sys.stderr, flush=True)
+            signaled.add(identity)
+
+    send_to_current(signal.SIGTERM)
+    deadline = time.monotonic() + grace_seconds
+    while time.monotonic() < deadline:
+        try:
+            _refresh_descendants(tracked)
+        except ResourceError as exc:
+            print(f"resource guard: cannot refresh child list during cleanup: {exc}", file=sys.stderr, flush=True)
+        active = {identity for identity in tracked if _record_is_live(identity)}
+        if not active:
+            break
+        for identity in active - signaled:
+            try:
+                _signal_process(identity, signal.SIGTERM)
+            except ResourceError as exc:
+                print(f"resource guard: cannot signal tracked child {identity.pid}: {exc}", file=sys.stderr, flush=True)
+            signaled.add(identity)
+        time.sleep(0.1)
+
+    send_to_current(signal.SIGKILL)
     try:
         proc.wait(timeout=2)
     except subprocess.TimeoutExpired:
         pass
-
-
-def _process_group_exists(process_group_id: int) -> bool:
-    try:
-        os.killpg(process_group_id, 0)
-        return True
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
+    _reap_adopted_children(tracked, proc.pid)
 
 
 def run_command(
@@ -389,6 +567,10 @@ def run_command(
         raise ResourceError("run requires a command after --")
     initial_state = checker(paths)
     print(f"{label}: {_format_state(initial_state)}", flush=True)
+    # Process-tree tracking depends on /proc and on the Linux subreaper facility.
+    # Verify /proc before launching work so the supervisor never starts blind.
+    _descendant_snapshot(os.getpid())
+    previous_subreaper = _set_child_subreaper(True)
     requested_signal: int | None = None
     previous_handlers: dict[int, signal.Handlers] = {}
 
@@ -404,37 +586,51 @@ def run_command(
     except Exception:
         for signum, handler in previous_handlers.items():
             signal.signal(signum, handler)
+        _restore_child_subreaper(previous_subreaper)
         raise
+    tracked: dict[ProcessIdentity, ProcessRecord] = {}
     try:
         while True:
             if requested_signal is not None:
                 print(
-                    f"resource guard: received signal {requested_signal}; stopping {label} process group",
+                    f"resource guard: received signal {requested_signal}; stopping {label} process tree",
                     file=sys.stderr,
                     flush=True,
                 )
-                _stop_process_group(proc, term_grace_seconds)
+                _stop_process_tree(proc, tracked, term_grace_seconds)
                 return 128 + requested_signal
             try:
+                _refresh_descendants(tracked)
                 state = checker(paths)
             except Exception as exc:
                 print(f"resource guard: {label} stopped: {exc}", file=sys.stderr, flush=True)
-                _stop_process_group(proc, term_grace_seconds)
+                _stop_process_tree(proc, tracked, term_grace_seconds)
                 return 125
             return_code = proc.poll()
-            if return_code is not None and not _process_group_exists(proc.pid):
+            active_descendants = {
+                identity for identity in tracked
+                if identity.pid != proc.pid and _record_is_live(identity)
+            }
+            if return_code is not None and not active_descendants:
+                _reap_adopted_children(tracked, proc.pid)
                 return return_code
             if poll_seconds > 0:
                 time.sleep(poll_seconds)
             else:
                 time.sleep(0.01)
     except KeyboardInterrupt:
-        print(f"resource guard: interrupt; stopping {label} process group", file=sys.stderr, flush=True)
-        _stop_process_group(proc, term_grace_seconds)
+        print(f"resource guard: interrupt; stopping {label} process tree", file=sys.stderr, flush=True)
+        _stop_process_tree(proc, tracked, term_grace_seconds)
         return 130
+    except Exception as exc:
+        print(f"resource guard: supervisor failed during {label}: {exc}", file=sys.stderr, flush=True)
+        _stop_process_tree(proc, tracked, term_grace_seconds)
+        return 125
     finally:
         for signum, handler in previous_handlers.items():
             signal.signal(signum, handler)
+        _reap_adopted_children(tracked, proc.pid)
+        _restore_child_subreaper(previous_subreaper)
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -442,7 +638,7 @@ def _parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="action", required=True)
     check = subparsers.add_parser("check", help="check reserves before starting a phase")
     check.add_argument("--path", action="append", default=[], help="additional path whose filesystem is monitored")
-    run = subparsers.add_parser("run", help="run and monitor one child process group")
+    run = subparsers.add_parser("run", help="run and monitor one child process tree")
     run.add_argument("--label", required=True, help="human-readable phase name")
     run.add_argument("--path", action="append", default=[], help="additional path whose filesystem is monitored")
     run.add_argument("command", nargs=argparse.REMAINDER, help="command after --")

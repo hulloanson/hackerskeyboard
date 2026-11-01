@@ -28,7 +28,9 @@ source scripts/env.sh
 
 `setup-build.sh` verifies cached archives before reuse and stores verified archives to avoid downloading them again. It installs only components that are missing. SDK license prompts are accepted by the setup command through `sdkmanager --licenses`; setup must be run in an environment where the operator is authorized to accept Google's Android SDK terms. It then installs the fixed SDK package IDs and verifies the expected files exist.
 
-`build.sh` accepts `assembleRelease` (default), `assembleDebug`, or `bundleRelease`. The release APK is unsigned and is produced at `app/build/outputs/apk/release/app-release-unsigned.apk`; signing is handled by `scripts/signing.py` with the persistent app key.
+`build.sh` accepts `assembleRelease` (default), `assembleDebug`, `assembleDebugAndroidTest`, or `bundleRelease`. The release APK is unsigned and is produced at `app/build/outputs/apk/release/app-release-unsigned.apk`; signing is handled by `scripts/signing.py` with the persistent app key. Each build's complete output is saved in `.local/build-tools/logs/build-<task>.log` as well as printed to the terminal.
+
+Emulator tooling is optional because it is not needed to produce the APK and adds a large system image. For the API 35 instrumentation smoke test, run `scripts/setup-emulator.sh`; it installs `platform-tools`, the stable `emulator` package, and `system-images;android-35;google_apis;x86_64`, then creates the `hackerskeyboard-api35` AVD under `.local/build-tools/android-user-home/avd`. Android's SDK Manager does not offer a fixed revision selector for these package IDs, so they are latest stable at setup time; they do not affect the pinned release build toolchain. The emulator run itself must use `resource_guard.py run` with the same memory and filesystem reserves. Hardware acceleration needs host KVM support; check that `/dev/kvm` is available before starting.
 
 Gradle runs without a persistent daemon, with at most two workers and parallel project execution disabled. The bootstrap JVM is bounded to a 256 MiB heap and 256 MiB metaspace; the Gradle build JVM is bounded to a 1 GiB heap, 384 MiB metaspace, and two reported processors. The app contains native C++ code, so limiting Gradle workers also limits concurrent native build work.
 
@@ -49,16 +51,15 @@ Every setup, download, extraction, and build phase starts through `scripts/resou
 
 The guard checks `/` and every requested output/cache path, deduplicates paths on the same filesystem, and samples memory, bytes, and inodes before a phase and every two seconds while it runs. It reads host `MemAvailable` plus cgroup v1 or v2 limits and current use, including ancestor limits. Finite cgroup `memory.max`/`memory.high` or v1 limits reduce effective availability; a readable `max` limit means the cgroup has no configured finite ceiling, so host `MemAvailable` bounds it. A VM with a cgroup filesystem but no memory controller reports that host availability is the only available memory metric. If a mounted controller exposes resource files but required limit or usage data is missing or malformed, the guard fails closed.
 
-The process supervisor starts each command as a new process group. If a reserve is breached, or the supervisor receives `SIGINT`, `SIGTERM`, or `SIGHUP`, it sends `SIGTERM` to the full group, waits up to ten seconds, then sends `SIGKILL`. It also keeps watching descendants if the command's leader exits before them. Resource-intensive commands should stay in that process group; avoid nested guard sessions or tools that daemonize outside it. Run checks or wrap one phase with:
+The process supervisor starts each command as a new process group and marks itself as a Linux child subreaper. It tracks descendant PIDs together with process start times through `/proc`, including processes that create a new session or survive their original parent. If a reserve is breached, or the supervisor receives `SIGINT`, `SIGTERM`, or `SIGHUP`, it sends `SIGTERM` to the child group and tracked descendants, waits up to ten seconds, then sends `SIGKILL`. It reaps adopted descendants before returning. If `/proc` or child-subreaper support is unavailable, it refuses to start the command. Resource-intensive phases should still use one guard wrapper; avoid nested guard sessions. Run checks or wrap one phase with:
 
 ```sh
 python3 scripts/resource_guard.py check --path /workspace --path /workspace/.local/build-tools
 python3 scripts/resource_guard.py run --label 'one build phase' --path /workspace --path /workspace/.local/build-tools -- command argument...
 ```
 
-The unit tests cover cgroup v1/v2 parsing, finite and unlimited limits, fail-closed behavior for unreadable values, reserve thresholds, child-tree termination after a breach, and wrapper signal forwarding:
+The unit tests cover cgroup v1/v2 parsing, finite and unlimited limits, fail-closed behavior for unreadable values, reserve thresholds, child-tree termination after a breach (including a double-forked `setsid` daemon), and wrapper signal forwarding:
 
 ```sh
 python3 -m unittest -v tests/test_resource_guard.py
 ```
-
