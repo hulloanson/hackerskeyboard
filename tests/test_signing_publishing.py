@@ -11,7 +11,7 @@ import unittest
 import zipfile
 from unittest import mock
 
-from scripts import fdroid_git, github_publish, signing
+from scripts import fdroid_git, fdroid_repo, fdroidserver_modernize, github_publish, signing
 
 
 APP_FINGERPRINT = "a" * 64
@@ -84,6 +84,37 @@ class SigningBackupTests(unittest.TestCase):
             self.assertIn(REPO_FINGERPRINT, updated)
             self.assertNotIn("will be published with the first release", updated)
             self.assertIn(REPO_FINGERPRINT, landing.read_text(encoding="utf-8"))
+
+
+class ModernIndexSigningTests(unittest.TestCase):
+    def test_modernizer_uses_fdroid_modern_signing_for_legacy_indexes_only(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = pathlib.Path(temporary)
+            for name in ("index-v1.jar", "index.jar", "entry.jar"):
+                (repo / name).write_bytes(name.encode("ascii"))
+            calls = []
+
+            def record_signing(path, *, use_old_algs):
+                calls.append((pathlib.Path(path).name, use_old_algs))
+
+            signed = fdroidserver_modernize.modernize_repo(repo, sign_jar=record_signing)
+            self.assertEqual(("index-v1.jar", "index.jar"), signed)
+            self.assertEqual(
+                [("index-v1.jar", False), ("index.jar", False)],
+                calls,
+            )
+
+    def test_init_cleanup_removes_only_generated_current_version_symlinks(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            work = pathlib.Path(temporary)
+            (work / "repo").mkdir()
+            generated = work / "HackersKeyboard.apk"
+            generated.symlink_to("repo/com.hulloanson_100.apk")
+            unrelated = work / "manual-link.apk"
+            unrelated.symlink_to("repo/manual.apk")
+            fdroid_repo.remove_generated_current_version_links(work)
+            self.assertFalse(generated.exists() or generated.is_symlink())
+            self.assertTrue(unrelated.is_symlink())
 
 
 class PublishedRepositoryVerificationTests(unittest.TestCase):

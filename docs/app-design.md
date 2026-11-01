@@ -39,8 +39,11 @@ only authorized way to run resource-intensive build operations.
 
 The native library is built with NDK flexible page-size support enabled for
 16 KB page-size devices. The standard Android NDK ABI set is left available to
-Gradle. This configuration still needs confirmation in a guarded build and
-artifact inspection.
+Gradle. `python3 scripts/verify-apk.py` checks the generated release artifact
+for its package/version/SDK identity, four native ABIs, 16 KB ZIP alignment,
+and 16 KB ELF LOAD alignment for both 64-bit libraries. It also verifies that
+the release manifest retains explicit component names in the Java namespace
+and does not include test-only Android libraries.
 
 `targetSdkVersion 35` also means Android 15 enforces edge-to-edge behavior for
 the app's activity windows. This narrow compatibility pass does not retrofit
@@ -113,13 +116,12 @@ script falls back to software emulation without changing device permissions.
 
 ## Validation still required
 
-- Run the guarded Gradle build and resolve compiler/resource errors before
-  signing or publication.
+- Guarded `assembleRelease` and `assembleDebugAndroidTest` builds pass. The
+  release APK passes `python3 scripts/verify-apk.py`; inspect the final signed
+  APK with the same command before publication.
 - Run the guarded API 35 emulator instrumentation matrix once the toolchain
   has provisioned an emulator and system image (`scripts/setup-emulator.sh`
   and `scripts/smoke-android.sh`).
-- Inspect the merged manifest and APK package ID; verify native libraries for
-  expected ABIs and 16 KB page-size compatibility.
 - Exercise Dvorak portrait and landscape, both web-entry modes with and
   without the settings key, and QWERTY on an emulator/device. Also rotate while
   the keyboard is open to verify cache recreation.

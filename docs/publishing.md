@@ -29,7 +29,7 @@ The F-Droid Python environment and Android build tools are kept under the ignore
 
 ## Persistent keys and backups
 
-After the scripts have been reviewed, scripts/signing.py init creates two separate RSA 4096-bit PKCS#12 keys, with separate random passwords:
+The reviewed scripts/signing.py init command created two separate RSA 4096-bit PKCS#12 keys, with separate random passwords:
 
 | Purpose | Keystore | Alias |
 | --- | --- | --- |
@@ -71,7 +71,7 @@ Initialize the private workspace after keys exist:
 
     python3 scripts/fdroid_repo.py init
 
-The workspace defaults to ~/.local/share/hackerskeyboard/signing/fdroid-work/; HK_FDROID_WORK_HOME can override it. Its config.yml has mode 0600 and reads the F-Droid key password from the process environment. It is never copied to repo_publish/. The URL defaults to the raw HTTPS endpoint above; FDROID_REPO_URL can override it with another HTTPS URL ending in /repo.
+The workspace defaults to ~/.local/share/hackerskeyboard/signing/fdroid-work/; HK_FDROID_WORK_HOME can override it. Its config.yml has mode 0600 and reads the F-Droid key password from the process environment. It is never copied to repo_publish/. The URL defaults to the raw HTTPS endpoint above; FDROID_REPO_URL can override it with another HTTPS URL ending in /repo. `make_current_version_link` is disabled so F-Droid does not create current-version APK symlinks.
 
 Initialization copies the app's MDPI Esc key icon to the private workspace and writes a category definition for `System`; F-Droid indexing then includes a real repository icon and a recognized category instead of a generated placeholder.
 
@@ -80,7 +80,9 @@ Validate the installed fdroidserver, metadata, environment-based secret loading,
     source scripts/env.sh
     python3 scripts/fdroid_repo.py doctor
 
-This runs F-Droid's metadata linter and a temporary JAR-signing check through the installed F-Droid signing tools. The generated app metadata pins AllowedAPKSigningKeys to the app certificate fingerprint, so F-Droid indexing fails closed if a release was signed with another app key. It records the version name and version code from each APK. The F-Droid index update produces v1 and v2 indexes; the script checks the v1 and entry JAR signatures against the persistent repository key and verifies the v2 index digest from the signed entry.
+This runs F-Droid's metadata linter and a temporary JAR-signing check through the installed F-Droid signing tools. It also creates a legacy-signed fixture and confirms that the modern F-Droid apksigner path replaces that signature with a SHA-256 JAR signature, verified by the default strict JDK verifier and the repository fingerprint. It does not change JVM security policy.
+
+The generated app metadata pins AllowedAPKSigningKeys to the app certificate fingerprint, so F-Droid indexing fails closed if a release was signed with another app key. It records the version name and version code from each APK. fdroidserver 2.4.5 initially signs index-v1.jar (and optional index.jar) with a legacy algorithm for older clients. After `fdroid update`, the guarded release script re-signs those JARs with fdroidserver's modern apksigner path (`use_old_algs=False`), producing SHA-256 signatures compatible with the supported Android 26 and newer clients. It leaves the already-modern entry.jar signature intact. The script then uses the default strict JDK verifier and checks that every signed index has exactly one signer matching the persistent repository key; it verifies the v2 index digest from the signed entry as well. No JVM security-policy overrides are used.
 
 ## Release and publishing sequence
 
@@ -96,7 +98,7 @@ This runs F-Droid's metadata linter and a temporary JAR-signing check through th
 
        python3 scripts/fdroid_repo.py stage "$HOME/hackerskeyboard-releases/com.hulloanson_<versionCode>.apk"
 
-   This runs fdroid update under the resource guard, checks the signed index files and their v2 digest, and copies the APKs and generated indexes into repo_publish/repo/. The source work directory remains private and outside Git.
+   This runs fdroid update and modern index re-signing under the resource guard, checks the strict signatures and v2 digest, and copies the APKs and generated indexes into repo_publish/repo/. The source work directory remains private and outside Git.
 
 4. Review the staged files and publish them through the configured Git credential helper or askpass:
 

@@ -2,7 +2,7 @@
 
 ## Current status
 
-The user resumed autonomous implementation after the tmux pause. Documentation, the initial app changes, and resource guard/build scripts are implemented. The pinned build toolchain is installed. Compiled/device validation, release signing, and publication are in progress. Separate persistent signing keys and verified external backups now exist; see [publishing.md](publishing.md). See [build.md](build.md), [app-design.md](app-design.md), and [publishing.md](publishing.md) for current decisions. The fork application ID must be `com.hulloanson`. At initialization `.gitignore` had a user change and `Vagrantfile` was untracked; preserve them. Update the status as checkpoints complete.
+The user resumed autonomous implementation after the tmux pause. Documentation, the initial app changes, and resource guard/build scripts are implemented. The pinned build toolchain is installed. Guarded debug, instrumentation-APK, and release builds succeeded. Package identity, four native ABIs, and 16 KB ZIP/64-bit ELF alignment passed artifact checks. Device execution, release signing, and publication are in progress. Separate persistent signing keys and verified external backups now exist; see [publishing.md](publishing.md). See [build.md](build.md), [app-design.md](app-design.md), and [publishing.md](publishing.md) for current decisions. The fork application ID must be `com.hulloanson`. At initialization `.gitignore` had a user change and `Vagrantfile` was untracked; preserve them. Update the status as checkpoints complete.
 
 ## Project and checkout
 
@@ -34,11 +34,11 @@ The intended change is to hide the Tab key next to Space only when the selected 
 
 ## Future checklist
 
-- [ ] Review the affected Dvorak layout modes and locale/orientation refresh lifecycle; settle and document the implementation approach.
-- [ ] Add the root ignore rule for `repo_publish/`, clone `hulloanson/fdroid_repo` there, and verify its initial state without creating commits in the main repository.
-- [ ] Inspect available memory, cgroup limits, filesystem bytes/inodes, existing build guidance, and installed toolchain before selecting build dependencies. Document safety reserves and implement fail-closed guards first.
-- [ ] Choose a higher `minSdkVersion` after compatibility review; modernize target/compile SDK and build tooling. Check current Android no-user-action install requirements and F-Droid client update behavior instead of treating minSdk as sufficient.
-- [ ] Add executable, guarded scripts for dependency installation/download and building. Bound Gradle workers and JVM memory using the documented resource limits.
+- [x] Review the affected Dvorak layout modes and locale/orientation refresh lifecycle; settle and document the implementation approach.
+- [x] Add the root ignore rule for `repo_publish/`, clone `hulloanson/fdroid_repo` there, and verify its initial state without creating commits in the main repository.
+- [x] Inspect available memory, cgroup limits, filesystem bytes/inodes, existing build guidance, and installed toolchain before selecting build dependencies. Document safety reserves and implement fail-closed guards first.
+- [x] Choose a higher `minSdkVersion` after compatibility review; modernize target/compile SDK and build tooling. Check current Android no-user-action install requirements and F-Droid client update behavior instead of treating minSdk as sufficient.
+- [x] Add executable, guarded scripts for dependency installation/download and building. Bound Gradle workers and JVM memory using the documented resource limits.
 - [ ] Implement the portrait-only Tab change for English Dvorak, preserving Dvorak landscape and all other layouts; verify the behavior across affected input modes and orientation changes.
 - [ ] Arrange and back up separate app and F-Droid repository signing keys outside both repositories. Build and sign the APK with the persistent app key, then verify the artifact and document the install consequence for users with the official signer.
 - [ ] Implement guarded scripts to initialize/update the F-Droid index and stage/publish the APK. Decide and verify HTTPS hosting and make the repository signing fingerprint available.

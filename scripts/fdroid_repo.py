@@ -163,7 +163,7 @@ def write_config(work: pathlib.Path) -> None:
         "repo_icon: 'icon.png'",
         "archive_older: 0",
         "sdk_path: " + quote(str(android_sdk())),
-        "make_current_version_link: true",
+        "make_current_version_link: false",
         "",
     ))
     temporary = config.with_suffix(".yml.tmp")
@@ -242,6 +242,7 @@ def configure_init() -> None:
     write_config(work)
     for directory in ("repo", "metadata", "unsigned", "tmp", "config"):
         (work / directory).mkdir(parents=True, exist_ok=True, mode=0o700)
+    remove_generated_current_version_links(work)
     if not APP_REPO_ICON.is_file():
         fail(f"app repository icon is missing: {APP_REPO_ICON}")
     icon = work / "icon.png"
@@ -266,6 +267,14 @@ def configure_init() -> None:
     if not metadata.exists():
         write_metadata(work)
     print(f"F-Droid workspace initialized outside both repositories: {work}")
+
+
+def remove_generated_current_version_links(work: pathlib.Path) -> None:
+    target_pattern = re.compile(r"repo/com\.hulloanson_[0-9]+\.apk(?:\.(?:asc|sig))?")
+    for directory in (work, work / "repo"):
+        for path in directory.iterdir():
+            if path.is_symlink() and target_pattern.fullmatch(os.readlink(path)):
+                path.unlink()
 
 
 def repo_fingerprint() -> str:
@@ -303,7 +312,7 @@ def doctor() -> None:
                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         if result.returncode != 0:
             fail(f"{label} failed with exit status {result.returncode}; output suppressed")
-    print("F-Droid 2.4.5 config, metadata, app signing-key pin, repository key, icon, and PKCS#12 checks passed")
+    print("F-Droid 2.4.5 config, metadata, key pins, icon, and SHA-256 index signing checks passed")
 
 
 def get_apk_version(apk: pathlib.Path, sdk: pathlib.Path) -> tuple[str, str]:
@@ -390,9 +399,12 @@ def verify_index_signatures(repo: pathlib.Path) -> None:
     for name in required:
         if not (repo / name).is_file():
             fail(f"F-Droid update did not produce required index output: repo/{name}")
-    for name in ("index-v1.jar", "entry.jar"):
+    signed_jars = ["index-v1.jar", "entry.jar"]
+    if (repo / "index.jar").exists():
+        signed_jars.append("index.jar")
+    for name in signed_jars:
         jar = repo / name
-        result = subprocess.run([jarsigner, "-verify", "-strict", "-certs", str(jar)],
+        result = subprocess.run([jarsigner, "-verify", "-strict", "-verbose", "-certs", str(jar)],
                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                                 env={**os.environ, "LC_ALL": "C"})
         if (result.returncode not in (0, 4)
@@ -447,6 +459,14 @@ def stage_apk(apk_argument: pathlib.Path) -> pathlib.Path:
         shell_in(work, [str(fdroid_executable()), "update"]),
         "generate and sign F-Droid repository indexes",
         (work, signing_home(), sdk),
+        env=env,
+    )
+    tools = env_path("HK_FDROID_VENV", ROOT / ".local/fdroidserver-2.4.5")
+    run_guarded(
+        shell_in(work, [str(tools / "bin" / "python"), str(ROOT / "scripts/fdroidserver_modernize.py"),
+                        str(work / "repo")]),
+        "replace legacy F-Droid index signatures with modern SHA-256 signatures",
+        (work, signing_home(), sdk, tools),
         env=env,
     )
     run_guarded(
