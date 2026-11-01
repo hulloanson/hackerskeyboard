@@ -69,6 +69,11 @@ class SigningBackupTests(unittest.TestCase):
                 "The HTTPS repository URL and signing fingerprint will be published with the first release.\n",
                 encoding="utf-8",
             )
+            landing = clone / "index.html"
+            landing.write_text(
+                "<p>The HTTPS repository URL and signing fingerprint will be published with the first release.</p>\n",
+                encoding="utf-8",
+            )
             fingerprints = f"app: {'a' * 64}\nrepo: {REPO_FINGERPRINT}\n"
             with mock.patch.object(fdroid_git, "CLONE", clone), \
                     mock.patch.object(fdroid_git.subprocess, "run",
@@ -78,6 +83,7 @@ class SigningBackupTests(unittest.TestCase):
             self.assertIn(fdroid_git.PUBLIC_REPO_URL, updated)
             self.assertIn(REPO_FINGERPRINT, updated)
             self.assertNotIn("will be published with the first release", updated)
+            self.assertIn(REPO_FINGERPRINT, landing.read_text(encoding="utf-8"))
 
 
 class PublishedRepositoryVerificationTests(unittest.TestCase):

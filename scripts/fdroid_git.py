@@ -83,7 +83,7 @@ def publish_paths(paths: Sequence[str], title: str, purpose: str) -> None:
                     fail(f"repo/ contains a symlink: {path.relative_to(CLONE)}")
                 if path.is_file() and forbidden.search(path.name):
                     fail(f"repo/ contains a private key or config file: {path.relative_to(CLONE)}")
-    subprocess.run(["git", "-C", str(CLONE), "add", "--", *paths], check=True)
+    guarded(["git", "-C", str(CLONE), "add", "--", *paths], "stage public F-Droid files")
     staged = subprocess.run(["git", "-C", str(CLONE), "diff", "--cached", "--name-only"],
                             check=True, stdout=subprocess.PIPE, text=True).stdout.splitlines()
     if not staged:
@@ -92,9 +92,9 @@ def publish_paths(paths: Sequence[str], title: str, purpose: str) -> None:
     if any(not any(name == allowed or name.startswith(allowed.rstrip("/") + "/") for allowed in PAGE_PATHS)
            for name in staged):
         fail("staged changes include paths outside the publishing allowlist; refusing to commit")
-    subprocess.run(["git", "-C", str(CLONE), "-c", "user.name=hulloanson",
-                    "-c", "user.email=9977536+hulloanson@users.noreply.github.com",
-                    "commit", "-m", title, "-m", f"- {purpose}"], check=True)
+    guarded(["git", "-C", str(CLONE), "-c", "user.name=hulloanson",
+             "-c", "user.email=9977536+hulloanson@users.noreply.github.com",
+             "commit", "-m", title, "-m", f"- {purpose}"], "commit public F-Droid files")
     guarded(["git", "-C", str(CLONE), "push", "origin", "main"], "publish F-Droid repository to GitHub")
     print("Published the staged public F-Droid files to GitHub main branch")
 
@@ -138,7 +138,7 @@ def publish_repo(message: str) -> None:
     if not (CLONE / "repo").is_dir():
         fail("repo_publish/repo is missing; run scripts/fdroid_repo.py stage after indexing an APK")
     update_public_details()
-    publish_paths(("repo", "README.md"), message,
+    publish_paths(("repo", "README.md", "index.html"), message,
                   "Publish the signed index, APK files, and repository signing fingerprint.")
 
 
@@ -159,23 +159,62 @@ def update_public_details() -> None:
         f"Repository signing fingerprint (SHA-256): {match.group(1)}\n"
         f"{README_DETAILS_END}"
     )
-    contents = readme.read_text(encoding="utf-8")
-    managed = re.compile(
-        re.escape(README_DETAILS_START) + r".*?" + re.escape(README_DETAILS_END),
-        re.DOTALL,
+    readme_block = (
+        f"{README_DETAILS_START}\n"
+        f"Repository URL: {PUBLIC_REPO_URL}\n"
+        f"Repository signing fingerprint (SHA-256): {match.group(1)}\n"
+        f"{README_DETAILS_END}"
     )
+    readme_contents = readme.read_text(encoding="utf-8")
+    readme_updated = replace_public_details(
+        readme_contents,
+        readme_block,
+        "The HTTPS repository URL and signing fingerprint will be published with the first release.",
+        "The public HTTPS repository URL and signing fingerprint are listed below.\n\n",
+        "README.md",
+    )
+    if readme_updated != readme_contents:
+        readme.write_text(readme_updated, encoding="utf-8")
+        os.chmod(readme, 0o644)
+
+    landing = CLONE / "index.html"
+    if not landing.is_file() or landing.is_symlink():
+        fail("repo_publish/index.html is missing or not a regular file")
+    html_start = "<!-- fdroid-public-details:start -->"
+    html_end = "<!-- fdroid-public-details:end -->"
+    html_block = (
+        f"{html_start}\n"
+        f"<p>Repository URL: <a href=\"{PUBLIC_REPO_URL}\">{PUBLIC_REPO_URL}</a></p>\n"
+        f"<p>Repository signing fingerprint (SHA-256): {match.group(1)}</p>\n"
+        f"{html_end}"
+    )
+    html_contents = landing.read_text(encoding="utf-8")
+    html_updated = replace_public_details(
+        html_contents,
+        html_block,
+        "<p>The HTTPS repository URL and signing fingerprint will be published with the first release.</p>",
+        "",
+        "index.html",
+        start=html_start,
+        end=html_end,
+    )
+    if html_updated != html_contents:
+        landing.write_text(html_updated, encoding="utf-8")
+        os.chmod(landing, 0o644)
+
+
+def replace_public_details(contents: str, block: str, placeholder: str, prefix: str,
+                           filename: str, *, start: str = README_DETAILS_START,
+                           end: str = README_DETAILS_END) -> str:
+    managed = re.compile(re.escape(start) + r".*?" + re.escape(end), re.DOTALL)
     if managed.search(contents):
         updated, count = managed.subn(lambda _match: block, contents)
         if count != 1:
-            fail("README.md must contain exactly one managed repository details block")
-    else:
-        placeholder = "The HTTPS repository URL and signing fingerprint will be published with the first release."
-        if contents.count(placeholder) != 1:
-            fail("README.md has no managed repository details block; review and add one before publishing")
-        updated = contents.replace(placeholder, "The public HTTPS repository URL and signing fingerprint are listed below.\n\n" + block)
-    if updated != contents:
-        readme.write_text(updated, encoding="utf-8")
-        os.chmod(readme, 0o644)
+            fail(f"{filename} must contain exactly one managed repository details block")
+        return updated
+    if contents.count(placeholder) != 1:
+        fail(f"{filename} has no managed repository details block; review it before publishing")
+    return contents.replace(placeholder, prefix + block)
 
 
 def main(argv: Sequence[str] | None = None) -> int:

@@ -211,4 +211,3 @@ if grep -F 'FATAL EXCEPTION' "$TMPDIR/ime-runtime.log" >/dev/null; then
 fi
 
 echo "Instrumentation and IME service smoke passed. Screenshots and logs: $TMPDIR"
-

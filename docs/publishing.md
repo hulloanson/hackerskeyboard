@@ -10,7 +10,7 @@ The selected public endpoint is:
 
     https://raw.githubusercontent.com/hulloanson/fdroid_repo/main/repo/
 
-The raw.githubusercontent.com HTTPS endpoint returned HTTP 200 for the repository landing page before F-Droid indexes existed. The complete F-Droid endpoint still needs to be checked after the first signed index and APK are published. GitHub Pages is not required. scripts/github_publish.py has optional Pages setup commands for a future hosting change, plus the HTTPS repository verifier used for the selected endpoint.
+The public raw.githubusercontent.com host returned HTTP 200 for the bootstrap README before F-Droid indexes existed. The complete F-Droid `/repo/` endpoint still needs to be checked after the first signed index and APK are published. GitHub Pages is not required. scripts/github_publish.py has optional Pages setup commands for a future hosting change, plus the HTTPS repository verifier used for the selected endpoint.
 
 F-Droid metadata uses AutoUpdateMode: None and UpdateCheckMode: None because releases are added from locally built APKs. These fields disable F-Droid server-side automatic build/update checks; they do not disable F-Droid client updates. Each release must have a higher version code and must keep the same app signing key.
 
@@ -40,8 +40,9 @@ By default, the keystores and their mode 0600 password files are stored in ~/.lo
 
 The script verifies and copies both keystores and password files to ~/hackerskeyboard-signing-backup/, mode 0700, with files mode 0600. HK_SIGNING_BACKUP_DIR can select another external backup directory. It also writes ~/hackerskeyboard-signing-backup.tar.gz (override with HK_SIGNING_ARCHIVE), mode 0600, containing exactly those four files with mode 0600, and verifies every archived byte against the verified directory copy. On a VM, these paths are still on the VM's storage: copy the archive to separate encrypted or access-controlled storage before the VM can be deleted. Keep this backup available for future updates; losing the app key prevents in-place updates, and losing the repository key changes the repository identity for F-Droid clients.
 
-The first key creation is:
+The first key creation (already completed for this checkout) was:
 
+    source scripts/env.sh
     python3 scripts/signing.py init
     python3 scripts/signing.py fingerprints
 
@@ -58,6 +59,8 @@ Do not generate replacement keys for a later APK or index update. scripts/signin
 
 Use the Android SDK installed by the build setup. Signing and APK inspection use Android build-tools 35.0.0. Set ANDROID_HOME or ANDROID_SDK_ROOT to that SDK.
 
+After build setup, source `scripts/env.sh` in each release shell to select the pinned JDK and Android SDK tools.
+
 Install the pinned F-Droid server tools in an external Python virtual environment:
 
     python3 scripts/fdroid_repo.py setup
@@ -70,7 +73,14 @@ Initialize the private workspace after keys exist:
 
 The workspace defaults to ~/.local/share/hackerskeyboard/signing/fdroid-work/; HK_FDROID_WORK_HOME can override it. Its config.yml has mode 0600 and reads the F-Droid key password from the process environment. It is never copied to repo_publish/. The URL defaults to the raw HTTPS endpoint above; FDROID_REPO_URL can override it with another HTTPS URL ending in /repo.
 
-The generated binary metadata pins AllowedAPKSigningKeys to the app certificate fingerprint, so F-Droid indexing fails closed if a release was signed with another app key. It records the version name and version code from each APK. The F-Droid index update produces v1 and v2 indexes; the script checks the v1 and entry JAR signatures against the persistent repository key and verifies the v2 index digest from the signed entry.
+Initialization copies the app's MDPI Esc key icon to the private workspace and writes a category definition for `System`; F-Droid indexing then includes a real repository icon and a recognized category instead of a generated placeholder.
+
+Validate the installed fdroidserver, metadata, environment-based secret loading, persistent key, icon, and PKCS#12 signing path without creating repository indexes or printing passwords:
+
+    source scripts/env.sh
+    python3 scripts/fdroid_repo.py doctor
+
+This runs F-Droid's metadata linter and a temporary JAR-signing check through the installed F-Droid signing tools. The generated app metadata pins AllowedAPKSigningKeys to the app certificate fingerprint, so F-Droid indexing fails closed if a release was signed with another app key. It records the version name and version code from each APK. The F-Droid index update produces v1 and v2 indexes; the script checks the v1 and entry JAR signatures against the persistent repository key and verifies the v2 index digest from the signed entry.
 
 ## Release and publishing sequence
 
@@ -92,7 +102,7 @@ The generated binary metadata pins AllowedAPKSigningKeys to the app certificate 
 
        python3 scripts/fdroid_git.py publish
 
-   The script commits and pushes only repo/ files on main; it does not embed a token in the Git remote. The initial repository landing-page commit can be created with python3 scripts/fdroid_git.py bootstrap.
+   The script updates the public repository URL and signing fingerprint, then commits and pushes only the allowlisted repo/, README.md, and index.html files on main; it does not embed a token in the Git remote. The initial repository landing-page commit can be created with python3 scripts/fdroid_git.py bootstrap.
 
 5. Print the public fingerprints and verify the HTTPS release:
 

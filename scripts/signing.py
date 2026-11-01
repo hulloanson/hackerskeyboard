@@ -81,6 +81,15 @@ def guarded(command: Sequence[str], label: str, paths: Sequence[pathlib.Path]) -
     subprocess.run(argv, check=True)
 
 
+def guarded_output(command: Sequence[str], label: str, paths: Sequence[pathlib.Path]) -> str:
+    argv = [sys.executable, str(GUARD), "run", "--label", label, "--path", str(ROOT)]
+    for path in paths:
+        argv.extend(("--path", str(path)))
+    argv.extend(("--", *command))
+    return subprocess.run(argv, check=True, stdout=subprocess.PIPE,
+                          stderr=subprocess.STDOUT, text=True).stdout
+
+
 def ensure_tool(name: str) -> str:
     path = shutil.which(name)
     if not path:
@@ -104,6 +113,8 @@ def verify_keystore(keystore: pathlib.Path, password: pathlib.Path, alias: str) 
     keytool = ensure_tool("keytool")
     if not keystore.is_file() or not password.is_file():
         fail(f"key material is incomplete for alias {alias}; refusing to generate a replacement")
+    if stat.S_IMODE(keystore.stat().st_mode) != 0o600:
+        fail(f"keystore file must have mode 0600: {keystore}")
     if stat.S_IMODE(password.stat().st_mode) != 0o600:
         fail(f"password file must have mode 0600: {password}")
     subprocess.run(
@@ -301,6 +312,8 @@ def sign_apk(unsigned_apk: pathlib.Path, output: pathlib.Path | None) -> None:
     package_id, version_code = match.groups()
     if package_id != "com.hulloanson":
         fail(f"APK package ID is {package_id!r}; expected com.hulloanson")
+    if not version_code.isdecimal():
+        fail("APK version code must be a decimal integer")
     if output is None:
         release_dir = pathlib.Path(
             os.environ.get("HK_RELEASE_DIR", pathlib.Path.home() / "hackerskeyboard-releases")
@@ -322,14 +335,15 @@ def sign_apk(unsigned_apk: pathlib.Path, output: pathlib.Path | None) -> None:
             "sign release APK",
             (sdk, output.parent, home),
         )
-        verification = subprocess.run(
+        verification = guarded_output(
             [str(apksigner), "verify", "--verbose", "--print-certs", str(temporary)],
-            check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-        ).stdout
-        signer = re.search(r"certificate SHA-256 digest:\s*([0-9a-fA-F:]+)", verification)
-        if not signer:
-            fail("apksigner did not report the signed APK certificate fingerprint")
-        actual = signer.group(1).replace(":", "").lower()
+            "verify signed APK",
+            (sdk, output.parent, home),
+        )
+        signers = re.findall(r"certificate SHA-256 digest:\s*([0-9a-fA-F:]+)", verification)
+        if len(signers) != 1:
+            fail("apksigner did not report exactly one signed APK certificate fingerprint")
+        actual = signers[0].replace(":", "").lower()
         if actual != expected_fingerprint:
             fail("signed APK fingerprint does not match the persistent app signing key")
         os.chmod(temporary, 0o644)

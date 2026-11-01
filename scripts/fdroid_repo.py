@@ -24,6 +24,7 @@ APP_ID = "com.hulloanson"
 REPO_KEY_ALIAS = "fdroid-repo"
 BUILD_TOOLS_VERSION = "35.0.0"
 DEFAULT_REPO_URL = "https://raw.githubusercontent.com/hulloanson/fdroid_repo/main/repo/"
+APP_REPO_ICON = ROOT / "app/src/main/res/drawable-mdpi/icon.png"
 
 
 def fail(message: str) -> "NoReturn":
@@ -62,6 +63,14 @@ def backup_home() -> pathlib.Path:
 def env_path(name: str, default: pathlib.Path) -> pathlib.Path:
     path = pathlib.Path(os.environ.get(name, str(default))).expanduser().resolve()
     return path
+
+
+def sha256_file(path: pathlib.Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def require_private_file(path: pathlib.Path) -> None:
@@ -151,6 +160,7 @@ def write_config(work: pathlib.Path) -> None:
         f"keystore: {quote(str(keystore))}",
         "keystorepass: {env: HK_FDROID_REPO_PASSWORD}",
         "keypass: {env: HK_FDROID_REPO_PASSWORD}",
+        "repo_icon: 'icon.png'",
         "archive_older: 0",
         "sdk_path: " + quote(str(android_sdk())),
         "make_current_version_link: true",
@@ -186,11 +196,15 @@ def write_metadata(
 ) -> None:
     metadata = work / "metadata" / f"{APP_ID}.yml"
     metadata.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if metadata.is_symlink():
+        fail(f"refusing symlinked F-Droid metadata path: {metadata}")
     fingerprint = app_fingerprint()
     current_version = ""
     if version_code is not None and version_name is not None:
-        escaped_name = "'" + version_name.replace("'", "''") + "'"
-        current_version = f"CurrentVersion: {escaped_name}\nCurrentVersionCode: {version_code}\n"
+        current_version = (
+            f"CurrentVersion: {json.dumps(version_name, ensure_ascii=False)}\n"
+            f"CurrentVersionCode: {version_code}\n"
+        )
     content = f"""# managed by scripts/fdroid_repo.py
 Categories:
   - System
@@ -226,12 +240,70 @@ def configure_init() -> None:
     android_sdk()
     key_material()
     write_config(work)
-    for directory in ("repo", "metadata", "unsigned", "tmp"):
+    for directory in ("repo", "metadata", "unsigned", "tmp", "config"):
         (work / directory).mkdir(parents=True, exist_ok=True, mode=0o700)
+    if not APP_REPO_ICON.is_file():
+        fail(f"app repository icon is missing: {APP_REPO_ICON}")
+    icon = work / "icon.png"
+    if icon.is_symlink():
+        fail(f"refusing symlinked F-Droid repository icon path: {icon}")
+    temporary_icon = work / ".icon.png.tmp"
+    shutil.copyfile(APP_REPO_ICON, temporary_icon)
+    os.chmod(temporary_icon, 0o644)
+    os.replace(temporary_icon, icon)
+    category_config = work / "config" / "categories.yml"
+    category_contents = "# managed by scripts/fdroid_repo.py\nSystem:\n  name: System\n"
+    if category_config.is_symlink():
+        fail(f"refusing symlinked category config: {category_config}")
+    if category_config.exists():
+        if not category_config.is_file():
+            fail(f"refusing to replace non-regular category config: {category_config}")
+        if "# managed by scripts/fdroid_repo.py" not in category_config.read_text(encoding="utf-8"):
+            fail(f"category config is not managed by this script: {category_config}")
+    category_config.write_text(category_contents, encoding="utf-8")
+    os.chmod(category_config, 0o600)
     metadata = work / "metadata" / f"{APP_ID}.yml"
     if not metadata.exists():
         write_metadata(work)
     print(f"F-Droid workspace initialized outside both repositories: {work}")
+
+
+def repo_fingerprint() -> str:
+    keystore, password, alias = key_material()
+    exported = subprocess.run(
+        ["keytool", "-exportcert", "-alias", alias, "-keystore", str(keystore),
+         "-storepass:file", str(password)],
+        check=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+    ).stdout
+    return hashlib.sha256(exported).hexdigest()
+
+
+def doctor() -> None:
+    work = work_home()
+    configure_init()
+    sdk = android_sdk()
+    tools = env_path("HK_FDROID_VENV", ROOT / ".local/fdroidserver-2.4.5")
+    python = tools / "bin" / "python"
+    fdroid = fdroid_executable()
+    if not python.is_file():
+        fail(f"F-Droid virtual environment is missing; run {ROOT / 'scripts/fdroid_repo.py'} setup")
+    env = os.environ.copy()
+    env.update(signing_password_env())
+    paths = (work, signing_home(), sdk, tools)
+    for command, label in (
+        ([str(fdroid), "lint", APP_ID, "config/categories.yml"], "validate F-Droid app metadata and categories"),
+        ([str(python), str(ROOT / "scripts/fdroidserver_doctor.py"), work.as_posix(),
+          app_fingerprint(), repo_fingerprint()], "validate F-Droid config and signing compatibility"),
+    ):
+        argv = [sys.executable, str(GUARD), "run", "--label", label, "--path", str(ROOT)]
+        for path in paths:
+            argv.extend(("--path", str(path)))
+        argv.extend(("--", *shell_in(work, command)))
+        result = subprocess.run(argv, check=False, env=env,
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        if result.returncode != 0:
+            fail(f"{label} failed with exit status {result.returncode}; output suppressed")
+    print("F-Droid 2.4.5 config, metadata, app signing-key pin, repository key, icon, and PKCS#12 checks passed")
 
 
 def get_apk_version(apk: pathlib.Path, sdk: pathlib.Path) -> tuple[str, str]:
@@ -250,6 +322,8 @@ def get_apk_version(apk: pathlib.Path, sdk: pathlib.Path) -> tuple[str, str]:
         fail("aapt could not read the APK package name and version code")
     if match.group(1) != APP_ID:
         fail(f"APK package ID is {match.group(1)!r}; expected {APP_ID}")
+    if not match.group(2).isdecimal():
+        fail("APK version code must be a decimal integer")
     return match.group(2), match.group(3)
 
 
@@ -272,7 +346,8 @@ def copy_public_repo(source: pathlib.Path, destination: pathlib.Path) -> None:
         relative = current_path.relative_to(source)
         target_dir = destination / relative
         target_dir.mkdir(parents=True, exist_ok=True)
-        dirs[:] = [name for name in dirs if not (current_path / name).is_symlink()]
+        if any((current_path / name).is_symlink() for name in dirs):
+            fail(f"generated F-Droid repo contains a symlinked directory: {current_path}")
         expected = set(dirs) | set(files)
         for child in target_dir.iterdir():
             if child.name not in expected:
@@ -287,6 +362,16 @@ def copy_public_repo(source: pathlib.Path, destination: pathlib.Path) -> None:
             if re.search(r"(?i)(\.p12|\.jks|\.keystore|\.pass|config\.ya?ml)$", name):
                 fail(f"refusing to stage a private or configuration file in repo/: {name}")
             shutil.copy2(source_file, target_dir / name)
+
+
+def copy_apk_file(source: pathlib.Path, destination: pathlib.Path) -> None:
+    if source.is_symlink() or not source.is_file():
+        fail(f"signed APK source must be a regular non-symlink file: {source}")
+    if destination.exists() or destination.is_symlink():
+        fail(f"refusing to overwrite APK in F-Droid workspace: {destination}")
+    destination.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    shutil.copy2(source, destination)
+    os.chmod(destination, 0o644)
 
 
 def verify_index_signatures(repo: pathlib.Path) -> None:
@@ -347,11 +432,15 @@ def stage_apk(apk_argument: pathlib.Path) -> pathlib.Path:
     write_metadata(work, version_code, version_name)
     destination = work / "repo" / f"{APP_ID}_{version_code}.apk"
     if destination.exists():
-        if hashlib.sha256(destination.read_bytes()).digest() != hashlib.sha256(apk.read_bytes()).digest():
+        if sha256_file(destination) != sha256_file(apk):
             fail(f"an APK with this package/version code already exists and differs: {destination}")
     else:
-        shutil.copy2(apk, destination)
-        os.chmod(destination, 0o644)
+        run_guarded(
+            [sys.executable, str(pathlib.Path(__file__).resolve()),
+             "_copy_apk", str(apk), str(destination)],
+            "copy signed APK into F-Droid workspace",
+            (apk.parent, work),
+        )
     env = os.environ.copy()
     env.update(signing_password_env())
     run_guarded(
@@ -360,7 +449,12 @@ def stage_apk(apk_argument: pathlib.Path) -> pathlib.Path:
         (work, signing_home(), sdk),
         env=env,
     )
-    verify_index_signatures(work / "repo")
+    run_guarded(
+        [sys.executable, str(pathlib.Path(__file__).resolve()),
+         "_verify_indexes", str(work / "repo")],
+        "verify generated F-Droid indexes",
+        (work, signing_home(), sdk),
+    )
     print(f"F-Droid indexes verified; publishable repo tree: {work / 'repo'}")
     return work / "repo"
 
@@ -416,17 +510,29 @@ def main(argv: Sequence[str] | None = None) -> int:
     sub.add_parser("init", help="initialize private F-Droid workspace and app metadata")
     stage = sub.add_parser("stage", help="index a signed APK and stage public repo files")
     stage.add_argument("apk", type=pathlib.Path)
+    sub.add_parser("doctor", help="validate config, metadata, icon, and repository signing compatibility")
     copy = sub.add_parser("_copy", help=argparse.SUPPRESS)
     copy.add_argument("source", type=pathlib.Path)
     copy.add_argument("destination", type=pathlib.Path)
+    copy_apk = sub.add_parser("_copy_apk", help=argparse.SUPPRESS)
+    copy_apk.add_argument("source", type=pathlib.Path)
+    copy_apk.add_argument("destination", type=pathlib.Path)
+    verify = sub.add_parser("_verify_indexes", help=argparse.SUPPRESS)
+    verify.add_argument("repo", type=pathlib.Path)
     args = parser.parse_args(argv)
     try:
         if args.command == "setup":
             setup_tools()
         elif args.command == "init":
             configure_init()
+        elif args.command == "doctor":
+            doctor()
         elif args.command == "_copy":
             copy_public_repo(args.source.resolve(strict=True), args.destination.absolute())
+        elif args.command == "_copy_apk":
+            copy_apk_file(args.source.resolve(strict=True), args.destination.absolute())
+        elif args.command == "_verify_indexes":
+            verify_index_signatures(args.repo.resolve(strict=True))
         else:
             public_repo = stage_apk(args.apk)
             stage_to_clone(public_repo)
