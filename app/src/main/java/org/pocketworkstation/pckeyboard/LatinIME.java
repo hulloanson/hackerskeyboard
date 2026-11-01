@@ -35,6 +35,7 @@ import android.content.SharedPreferences;
 import android.content.res.Configuration;
 import android.content.res.Resources;
 import android.content.res.XmlResourceParser;
+import android.content.pm.PackageManager;
 import android.inputmethodservice.InputMethodService;
 import android.media.AudioManager;
 import android.os.Build;
@@ -412,7 +413,7 @@ public class LatinIME extends InputMethodService implements
         pFilter.addAction("android.intent.action.PACKAGE_ADDED");
         pFilter.addAction("android.intent.action.PACKAGE_REPLACED");
         pFilter.addAction("android.intent.action.PACKAGE_REMOVED");
-        registerReceiver(mPluginManager, pFilter);
+        registerReceiverCompat(mPluginManager, pFilter, true);
 
         LatinIMEUtil.GCUtils.getInstance().reset();
         boolean tryGC = true;
@@ -431,7 +432,7 @@ public class LatinIME extends InputMethodService implements
         // register to receive ringer mode changes for silent mode
         IntentFilter filter = new IntentFilter(
                 AudioManager.RINGER_MODE_CHANGED_ACTION);
-        registerReceiver(mReceiver, filter);
+        registerReceiverCompat(mReceiver, filter, true);
         prefs.registerOnSharedPreferenceChangeListener(this);
         setNotification(mKeyboardNotification);
     }
@@ -480,6 +481,12 @@ public class LatinIME extends InputMethodService implements
         NotificationManager mNotificationManager = (NotificationManager) getSystemService(ns);
 
         if (visible && mNotificationReceiver == null) {
+            if ((Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+                    && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
+                            != PackageManager.PERMISSION_GRANTED)
+                    || !NotificationManagerCompat.from(this).areNotificationsEnabled()) {
+                return;
+            }
             createNotificationChannel();
             int icon = R.drawable.icon;
             CharSequence text = "Keyboard notification enabled.";
@@ -489,15 +496,19 @@ public class LatinIME extends InputMethodService implements
             mNotificationReceiver = new NotificationReceiver(this);
             final IntentFilter pFilter = new IntentFilter(NotificationReceiver.ACTION_SHOW);
             pFilter.addAction(NotificationReceiver.ACTION_SETTINGS);
-            registerReceiver(mNotificationReceiver, pFilter);
+            registerReceiverCompat(mNotificationReceiver, pFilter, false);
             
-            Intent notificationIntent = new Intent(NotificationReceiver.ACTION_SHOW);
-            PendingIntent contentIntent = PendingIntent.getBroadcast(getApplicationContext(), 1, notificationIntent, 0);
+            Intent notificationIntent = new Intent(NotificationReceiver.ACTION_SHOW)
+                    .setPackage(getPackageName());
+            PendingIntent contentIntent = PendingIntent.getBroadcast(getApplicationContext(), 1,
+                    notificationIntent, PendingIntent.FLAG_IMMUTABLE);
             //PendingIntent contentIntent = PendingIntent.getActivity(this, 0, notificationIntent, 0);
 
-            Intent configIntent = new Intent(NotificationReceiver.ACTION_SETTINGS);
+            Intent configIntent = new Intent(NotificationReceiver.ACTION_SETTINGS)
+                    .setPackage(getPackageName());
             PendingIntent configPendingIntent =
-                    PendingIntent.getBroadcast(getApplicationContext(), 2, configIntent, 0);
+                    PendingIntent.getBroadcast(getApplicationContext(), 2, configIntent,
+                            PendingIntent.FLAG_IMMUTABLE);
 
             String title = "Show Hacker's Keyboard";
             String body = "Select this to open the keyboard. Disable in settings.";
@@ -534,10 +545,20 @@ public class LatinIME extends InputMethodService implements
             // notificationId is a unique int for each notification that you must define
             notificationManager.notify(NOTIFICATION_ONGOING_ID, mBuilder.build());
 
-        } else if (mNotificationReceiver != null) {
+        } else if (!visible && mNotificationReceiver != null) {
             mNotificationManager.cancel(NOTIFICATION_ONGOING_ID);
             unregisterReceiver(mNotificationReceiver);
             mNotificationReceiver = null;
+        }
+    }
+
+    private void registerReceiverCompat(BroadcastReceiver receiver, IntentFilter filter,
+            boolean exported) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(receiver, filter, exported ? Context.RECEIVER_EXPORTED
+                    : Context.RECEIVER_NOT_EXPORTED);
+        } else {
+            registerReceiver(receiver, filter);
         }
     }
     

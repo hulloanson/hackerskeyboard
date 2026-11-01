@@ -152,6 +152,9 @@ public class Keyboard {
 
     /** Keyboard mode, or zero, if none.  */
     private int mKeyboardMode;
+
+    /** Whether the Dvorak Tab key in a web-entry row should merge into Space. */
+    private final boolean mHideTabKey;
     
     private boolean mUseExtension;
 
@@ -826,6 +829,11 @@ public class Keyboard {
      * @param kbHeightPercent height of the keyboard as percentage of screen height
      */
     public Keyboard(Context context, int defaultHeight, int xmlLayoutResId, int modeId, float kbHeightPercent) {
+        this(context, defaultHeight, xmlLayoutResId, modeId, kbHeightPercent, false);
+    }
+
+    public Keyboard(Context context, int defaultHeight, int xmlLayoutResId, int modeId,
+            float kbHeightPercent, boolean hideTabKey) {
         DisplayMetrics dm = context.getResources().getDisplayMetrics();
         mDisplayWidth = dm.widthPixels;
         mDisplayHeight = dm.heightPixels;
@@ -840,6 +848,7 @@ public class Keyboard {
         mKeys = new ArrayList<Key>();
         mModifierKeys = new ArrayList<Key>();
         mKeyboardMode = modeId;
+        mHideTabKey = hideTabKey;
         mUseExtension = LatinIME.sKeyboardSettings.useExtension;
         loadKeyboard(context, context.getResources().getXml(xmlLayoutResId));
         setEdgeFlags();
@@ -1195,6 +1204,12 @@ public class Keyboard {
                    } else if (TAG_KEY.equals(tag)) {
                         inKey = true;
                         key = createKeyFromXml(res, currentRow, Math.round(x), y, parser);
+                        if (mHideTabKey && key.codes != null && key.codes.length > 0
+                                && key.codes[0] == res.getInteger(R.integer.key_tab)) {
+                            // The parser below merges code-less key width into the previous key.
+                            // In the Dvorak portrait web rows, that previous key is Space.
+                            key.codes = null;
+                        }
                         key.realX = x;
                         if (key.codes == null) {
                           // skip this key, adding its width to the previous one

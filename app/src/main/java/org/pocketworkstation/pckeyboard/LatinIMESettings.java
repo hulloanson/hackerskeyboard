@@ -19,6 +19,7 @@ package org.pocketworkstation.pckeyboard;
 import java.util.HashMap;
 import java.util.Map;
 
+import android.Manifest;
 import android.app.Dialog;
 import android.app.backup.BackupManager;
 import android.content.DialogInterface;
@@ -27,6 +28,7 @@ import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.Signature;
 import android.content.res.Resources;
+import android.os.Build;
 import android.os.Bundle;
 import android.preference.CheckBoxPreference;
 import android.preference.ListPreference;
@@ -51,8 +53,10 @@ public class LatinIMESettings extends PreferenceActivity
 
     // Dialog ids
     private static final int VOICE_INPUT_CONFIRM_DIALOG = 0;
+    private static final int REQUEST_POST_NOTIFICATIONS = 1;
 
     private CheckBoxPreference mQuickFixes;
+    private CheckBoxPreference mKeyboardNotificationPreference;
     private ListPreference mVoicePreference;
     private ListPreference mSettingsKeyPreference;
     private ListPreference mKeyboardModePortraitPreference;
@@ -70,6 +74,24 @@ public class LatinIMESettings extends PreferenceActivity
         super.onCreate(icicle);
         addPreferencesFromResource(R.xml.prefs);
         mQuickFixes = (CheckBoxPreference) findPreference(QUICK_FIXES_KEY);
+        mKeyboardNotificationPreference = (CheckBoxPreference) findPreference(
+                LatinIME.PREF_KEYBOARD_NOTIFICATION);
+        mKeyboardNotificationPreference.setOnPreferenceChangeListener(
+                new Preference.OnPreferenceChangeListener() {
+                    @Override
+                    public boolean onPreferenceChange(Preference preference, Object newValue) {
+                        if (Boolean.TRUE.equals(newValue)
+                                && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+                                && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
+                                        != PackageManager.PERMISSION_GRANTED) {
+                            requestPermissions(new String[] {
+                                    Manifest.permission.POST_NOTIFICATIONS
+                            }, REQUEST_POST_NOTIFICATIONS);
+                            return false;
+                        }
+                        return true;
+                    }
+                });
         mVoicePreference = (ListPreference) findPreference(VOICE_SETTINGS_KEY);
         mSettingsKeyPreference = (ListPreference) findPreference(PREF_SETTINGS_KEY);
         mInputConnectionInfo = (Preference) findPreference(INPUT_CONNECTION_INFO);
@@ -136,6 +158,16 @@ public class LatinIMESettings extends PreferenceActivity
         }
 
         mLabelVersion.setSummary(version);
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions,
+            int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == REQUEST_POST_NOTIFICATIONS && grantResults.length > 0
+                && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+            mKeyboardNotificationPreference.setChecked(true);
+        }
     }
 
     @Override

@@ -8,8 +8,8 @@ import android.view.inputmethod.InputMethodManager;
 
 public class NotificationReceiver extends BroadcastReceiver {
     static final String TAG = "PCKeyboard/Notification";
-    static public final String ACTION_SHOW = "org.pocketworkstation.pckeyboard.SHOW";
-    static public final String ACTION_SETTINGS = "org.pocketworkstation.pckeyboard.SETTINGS";
+    static public final String ACTION_SHOW = "com.hulloanson.SHOW";
+    static public final String ACTION_SETTINGS = "com.hulloanson.NOTIFICATION_SETTINGS";
 
     private LatinIME mIME;
 

@@ -117,7 +117,8 @@ public class LatinKeyboard extends Keyboard {
     }
 
     public LatinKeyboard(Context context, int xmlLayoutResId, int mode, float kbHeightPercent) {
-        super(context, 0, xmlLayoutResId, mode, kbHeightPercent);
+        super(context, 0, xmlLayoutResId, mode, kbHeightPercent,
+                shouldHidePortraitDvorakTab(context, xmlLayoutResId));
         final Resources res = context.getResources();
         //Log.i("PCKeyboard", "keyHeight=" + this.getKeyHeight());
         //this.setKeyHeight(30); // is useless, see http://code.google.com/p/android/issues/detail?id=4532
@@ -150,6 +151,17 @@ public class LatinKeyboard extends Keyboard {
         mSpaceKeyIndexArray = new int[] { indexOf(LatinIME.ASCII_SPACE) };
         // TODO remove this initialization after cleanup
         mVerticalGap = super.getVerticalGap();
+    }
+
+    private static boolean shouldHidePortraitDvorakTab(Context context,
+            int xmlLayoutResId) {
+        final Locale inputLocale = LatinIME.sKeyboardSettings.inputLocale;
+        return xmlLayoutResId == R.xml.kbd_qwerty
+                && inputLocale != null
+                && "en".equals(inputLocale.getLanguage())
+                && "DV".equals(inputLocale.getCountry())
+                && context.getResources().getConfiguration().orientation
+                        == android.content.res.Configuration.ORIENTATION_PORTRAIT;
     }
 
     @Override
