@@ -1,6 +1,6 @@
 # Repository instructions
 
-Before making changes, read [README.md](README.md) and [docs/development.md](docs/development.md). The development guide is the detailed record of repository context, design decisions, workflow requirements, and task status. Keep it current as work proceeds; update the README summary when the status or user-facing scope changes. Build and resource reserves are in [docs/build.md](docs/build.md), and app identity/layout decisions are in [docs/app-design.md](docs/app-design.md). Put durable design decisions and operational details in tracked files under `docs/`, then link to them from the README or this file.
+Before making changes, read [README.md](README.md) and [docs/development.md](docs/development.md). The development guide is the detailed record of repository context, design decisions, workflow requirements, and task status. Keep it current as work proceeds; update the README summary when the status or user-facing scope changes. Build and resource reserves are in [docs/build.md](docs/build.md), app identity/layout decisions are in [docs/app-design.md](docs/app-design.md), and signing/hosting decisions are in [docs/publishing.md](docs/publishing.md). Put durable design decisions and operational details in tracked files under `docs/`, then link to them from the README or this file.
 
 ## Collaboration
 

@@ -2,7 +2,7 @@
 
 ## Current status
 
-The user resumed autonomous implementation after the tmux pause. Documentation, the initial app changes, and resource guard/build scripts are implemented. Toolchain installation, compiled/device validation, signing, and publication are in progress. See [build.md](build.md) and [app-design.md](app-design.md) for current decisions. The fork application ID must be `com.hulloanson`. At initialization `.gitignore` had a user change and `Vagrantfile` was untracked; preserve them. Update the status as checkpoints complete.
+The user resumed autonomous implementation after the tmux pause. Documentation, the initial app changes, and resource guard/build scripts are implemented. The pinned build toolchain is installed. Compiled/device validation, release signing, and publication are in progress. Separate persistent signing keys and verified external backups now exist; see [publishing.md](publishing.md). See [build.md](build.md), [app-design.md](app-design.md), and [publishing.md](publishing.md) for current decisions. The fork application ID must be `com.hulloanson`. At initialization `.gitignore` had a user change and `Vagrantfile` was untracked; preserve them. Update the status as checkpoints complete.
 
 ## Project and checkout
 
@@ -29,7 +29,7 @@ The intended change is to hide the Tab key next to Space only when the selected 
 - Before and during each resource-intensive step, guards must check available memory from both cgroups and the host, plus filesystem free bytes and free inodes. Unknown limits must fail closed. Document concrete safety reserves before implementation; bound worker counts and JVM memory; stop child process trees if thresholds are crossed. Guards must cover installation/download, build, signing, index generation, and publish staging. This is a requirement, not implemented behavior.
 - The main app signing key and the F-Droid repository/index signing key are separate. Store both outside the tracked app repository and `repo_publish/`, back them up, and reuse them for later updates; never regenerate a key to update an existing APK or repository. A different signer cannot update the original package in place. This fork uses the separate package ID `com.hulloanson`, so it can coexist with the original; updates to this fork require its persistent signing key.
 - The intended repository checkout is `hulloanson/fdroid_repo` in `./repo_publish/`. The user reports that it is empty and has no commits; verify its actual state on first clone before initializing it. Add an ignore rule for `repo_publish/` before cloning, and keep its contents out of the main repository's commits.
-- Hosting is undecided and needs investigation. A clone alone is not a reachable F-Droid repository, and GitHub Pages must not be assumed to be enabled. Publishing is complete only after the repository is served at a verified HTTPS URL and its signing fingerprint is available to clients.
+- Hosting uses `https://raw.githubusercontent.com/hulloanson/fdroid_repo/main/repo/`. GitHub Pages enablement returned HTTP 403 with the supplied token; the raw HTTPS landing page was verified instead. The empty publishing repository was cloned and bootstrapped on `main`. Publication remains incomplete until hosted signed indexes and the APK verify against the persistent certificate fingerprints.
 - Never store a PAT, password, signing secret, private key, or credential-bearing URL in documentation, scripts, Git remotes, or logs. Use external credential/key storage and avoid printing secrets in command output.
 
 ## Future checklist
