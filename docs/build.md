@@ -40,7 +40,7 @@ Gradle runs without a persistent daemon, with at most two workers and parallel p
 
 ## Resource reserves and enforcement
 
-The setup environment was inspected before choosing reserves. It reported about 5.8 GiB total host memory and 5.0 GiB `MemAvailable`. The system filesystem had about 4.2 GiB free, while `/workspace` had about 44 GiB free and 26.9 million free inodes. Build tools and all large build state therefore go under `/workspace/.local/build-tools`; temporary files are directed there as well. On 2026-11-02 host RAM was raised to 8 GiB (about 7.6 GiB `MemTotal`); the reserves below are unchanged.
+The setup environment was inspected before choosing reserves. It reported about 5.8 GiB total host memory and 5.0 GiB `MemAvailable`. The system filesystem had about 4.2 GiB free, while `/workspace` had about 44 GiB free and 26.9 million free inodes. Build tools and all large build state therefore go under `/workspace/.local/build-tools`; temporary files are directed there as well. On 2026-11-02 host RAM was raised to 8 GiB (about 7.6 GiB `MemTotal`); the reserves below are unchanged. The same day, the user lowered the reserve for non-system filesystems from 10 GiB to 2 GiB because another project on the shared `/workspace` host volume left about 3.8 GiB free.
 
 Every setup, download, extraction, and build phase starts through `scripts/resource_guard.py`. Signing and repository scripts use the same interface. The fixed reserves are:
 
@@ -50,7 +50,7 @@ Every setup, download, extraction, and build phase starts through `scripts/resou
 | Effective cgroup memory available | 2 GiB |
 | System filesystem free bytes | 1 GiB |
 | System filesystem free inodes | 50,000 |
-| Each other monitored filesystem free bytes | 10 GiB |
+| Each other monitored filesystem free bytes | 2 GiB |
 | Each other monitored filesystem free inodes | 100,000 |
 
 The guard checks `/` and every requested output/cache path, deduplicates paths on the same filesystem, and samples memory, bytes, and inodes before a phase and every two seconds while it runs. It reads host `MemAvailable` plus cgroup v1 or v2 limits and current use, including ancestor limits. Finite cgroup `memory.max`/`memory.high` or v1 limits reduce effective availability; a readable `max` limit means the cgroup has no configured finite ceiling, so host `MemAvailable` bounds it. A VM with a cgroup filesystem but no memory controller reports that host availability is the only available memory metric. If a mounted controller exposes resource files but required limit or usage data is missing or malformed, the guard fails closed.

@@ -15,8 +15,19 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_APK = ROOT / "app/build/outputs/apk/release/app-release-unsigned.apk"
 EXPECTED_PACKAGE = "com.hulloanson"
-EXPECTED_VERSION_CODE = "1041002"
-EXPECTED_VERSION_NAME = "1.41.2-hulloanson"
+
+
+def gradle_version(field: str) -> str:
+    """Read versionCode or versionName from app/build.gradle so releases cannot drift."""
+    text = (ROOT / "app/build.gradle").read_text(encoding="utf-8")
+    match = re.search(rf"^\s*{field}\s+'?([^'\s]+)'?\s*$", text, re.MULTILINE)
+    if match is None:
+        raise SystemExit(f"verify-apk: {field} not found in app/build.gradle")
+    return match.group(1)
+
+
+EXPECTED_VERSION_CODE = gradle_version("versionCode")
+EXPECTED_VERSION_NAME = gradle_version("versionName")
 EXPECTED_MIN_SDK = "26"
 EXPECTED_TARGET_SDK = "35"
 EXPECTED_ABIS = {"arm64-v8a", "armeabi-v7a", "x86", "x86_64"}
