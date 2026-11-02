@@ -16,13 +16,20 @@
 
 package org.pocketworkstation.pckeyboard;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 
 import android.Manifest;
 import android.app.Dialog;
 import android.app.backup.BackupManager;
 import android.content.DialogInterface;
+import android.content.Intent;
+import android.net.Uri;
 import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
@@ -38,6 +45,7 @@ import android.preference.PreferenceGroup;
 import android.text.AutoText;
 import android.text.InputType;
 import android.util.Log;
+import android.widget.Toast;
 
 public class LatinIMESettings extends PreferenceActivity
         implements SharedPreferences.OnSharedPreferenceChangeListener,
@@ -54,6 +62,12 @@ public class LatinIMESettings extends PreferenceActivity
     // Dialog ids
     private static final int VOICE_INPUT_CONFIRM_DIALOG = 0;
     private static final int REQUEST_POST_NOTIFICATIONS = 1;
+    private static final int REQUEST_EXPORT_SETTINGS = 2;
+    private static final int REQUEST_IMPORT_SETTINGS = 3;
+    private static final String EXPORT_SETTINGS_KEY = "export_settings";
+    private static final String IMPORT_SETTINGS_KEY = "import_settings";
+    private static final String SETTINGS_MIME_TYPE = "application/json";
+    private static final String SETTINGS_FILE_NAME = "hackerskeyboard-settings.json";
 
     private CheckBoxPreference mQuickFixes;
     private CheckBoxPreference mKeyboardNotificationPreference;
@@ -102,6 +116,30 @@ public class LatinIMESettings extends PreferenceActivity
         mKeyboardModePortraitPreference = (ListPreference) findPreference("pref_keyboard_mode_portrait");
         mKeyboardModeLandscapePreference = (ListPreference) findPreference("pref_keyboard_mode_landscape");
         
+        findPreference(EXPORT_SETTINGS_KEY).setOnPreferenceClickListener(
+                new Preference.OnPreferenceClickListener() {
+                    @Override
+                    public boolean onPreferenceClick(Preference preference) {
+                        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+                        intent.addCategory(Intent.CATEGORY_OPENABLE);
+                        intent.setType(SETTINGS_MIME_TYPE);
+                        intent.putExtra(Intent.EXTRA_TITLE, SETTINGS_FILE_NAME);
+                        startActivityForResult(intent, REQUEST_EXPORT_SETTINGS);
+                        return true;
+                    }
+                });
+        findPreference(IMPORT_SETTINGS_KEY).setOnPreferenceClickListener(
+                new Preference.OnPreferenceClickListener() {
+                    @Override
+                    public boolean onPreferenceClick(Preference preference) {
+                        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                        intent.addCategory(Intent.CATEGORY_OPENABLE);
+                        intent.setType(SETTINGS_MIME_TYPE);
+                        startActivityForResult(intent, REQUEST_IMPORT_SETTINGS);
+                        return true;
+                    }
+                });
+
         SharedPreferences prefs = getPreferenceManager().getSharedPreferences();
         prefs.registerOnSharedPreferenceChangeListener(this);
 
@@ -167,6 +205,121 @@ public class LatinIMESettings extends PreferenceActivity
         if (requestCode == REQUEST_POST_NOTIFICATIONS && grantResults.length > 0
                 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
             mKeyboardNotificationPreference.setChecked(true);
+        }
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (resultCode != RESULT_OK || data == null || data.getData() == null) return;
+        final Uri uri = data.getData();
+        if (requestCode == REQUEST_EXPORT_SETTINGS) {
+            runBackupTask(new Runnable() {
+                public void run() { exportSettings(uri); }
+            });
+        } else if (requestCode == REQUEST_IMPORT_SETTINGS) {
+            runBackupTask(new Runnable() {
+                public void run() { importSettings(uri); }
+            });
+        }
+    }
+
+    // The document provider may be slow (for example a network-backed one), so keep
+    // the file I/O off the UI thread.
+    private void runBackupTask(Runnable task) {
+        new Thread(task, "settings-backup").start();
+    }
+
+    private void showToast(final String message) {
+        runOnUiThread(new Runnable() {
+            public void run() {
+                Toast.makeText(getApplicationContext(), message, Toast.LENGTH_LONG).show();
+            }
+        });
+    }
+
+    private void exportSettings(Uri uri) {
+        try {
+            PackageInfo info = getPackageManager().getPackageInfo(getPackageName(), 0);
+            Map<String, String> schema = SettingsBackupSchema.load(this);
+            Map<String, ?> all = getPreferenceManager().getSharedPreferences().getAll();
+            String json = SettingsBackup.serialize(all, schema, getPackageName(),
+                    info.versionName,
+                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
+                            ? info.getLongVersionCode() : info.versionCode);
+            OutputStream out = getContentResolver().openOutputStream(uri, "wt");
+            if (out == null) throw new IOException("Could not open the file");
+            try {
+                out.write(json.getBytes(StandardCharsets.UTF_8));
+            } finally {
+                out.close();
+            }
+            showToast(getString(R.string.export_settings_done,
+                    countExportable(all, schema)));
+        } catch (Exception e) {
+            Log.e(TAG, "Settings export failed", e);
+            showToast(getString(R.string.export_settings_failed, e.getMessage()));
+        }
+    }
+
+    private static int countExportable(Map<String, ?> all, Map<String, String> schema) {
+        int count = 0;
+        for (Map.Entry<String, ?> e : all.entrySet()) {
+            String expected = schema.get(e.getKey());
+            if (expected != null && expected.equals(SettingsBackup.typeOf(e.getValue()))) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private void importSettings(Uri uri) {
+        try {
+            Map<String, String> schema = SettingsBackupSchema.load(this);
+            String json;
+            InputStream in = getContentResolver().openInputStream(uri);
+            if (in == null) throw new IOException("Could not open the file");
+            try {
+                json = SettingsBackup.readLimited(in);
+            } finally {
+                in.close();
+            }
+            // Whole file is validated before the first write; any error throws here.
+            SettingsBackup.ImportPlan plan = SettingsBackup.parse(json, schema);
+            SharedPreferences.Editor editor = getPreferenceManager().getSharedPreferences().edit();
+            for (Map.Entry<String, Object> e : plan.values.entrySet()) {
+                putValue(editor, e.getKey(), e.getValue());
+            }
+            if (!editor.commit()) throw new IOException("Could not write preferences");
+            showToast(getString(R.string.import_settings_done, plan.values.size(),
+                    plan.skippedUnknown));
+            // LatinIME listens to the same preferences and has already been notified of
+            // each changed key. Recreate this screen so every widget rereads its value.
+            runOnUiThread(new Runnable() {
+                public void run() {
+                    if (!isFinishing() && !isDestroyed()) recreate();
+                }
+            });
+        } catch (Exception e) {
+            Log.e(TAG, "Settings import failed", e);
+            showToast(getString(R.string.import_settings_failed, e.getMessage()));
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void putValue(SharedPreferences.Editor editor, String key, Object value) {
+        if (value instanceof Boolean) {
+            editor.putBoolean(key, (Boolean) value);
+        } else if (value instanceof Integer) {
+            editor.putInt(key, (Integer) value);
+        } else if (value instanceof Long) {
+            editor.putLong(key, (Long) value);
+        } else if (value instanceof Float) {
+            editor.putFloat(key, (Float) value);
+        } else if (value instanceof String) {
+            editor.putString(key, (String) value);
+        } else {
+            editor.putStringSet(key, (Set<String>) value);
         }
     }
 

@@ -108,20 +108,76 @@ it constructs the real `LatinKeyboard` for English Dvorak in both orientations
 and for QWERTY in both orientations, then checks Tab visibility across all
 alphabet modes plus Space width in both web-entry modes.
 Run `scripts/setup-emulator.sh` once and then `scripts/smoke-android.sh` for the
-guarded API 35 run. It builds the test APKs first, then starts the emulator and
-foreground ADB server under a separate guard, runs the matrix, enables the
-debug IME with `en-DV`, and captures portrait/landscape screenshots under
-`.local/build-tools/tmp`. When KVM is unavailable to the current user, the
-script falls back to software emulation without changing device permissions.
+guarded API 35 run, or set `HK_SMOKE_API_LEVEL=34` for the API 34 AOSP fallback.
+The API 35 Google APIs image was stopped by the resource guard because its
+software-emulated guest exceeded the 2 GiB host-availability reserve before
+boot completion. The smoke launcher uses the emulator's `-lowram` option with
+a bounded 2 GiB guest for the API 34 fallback; the emulator source sets its
+minimum RAM to zero under that option ([upstream emulator implementation](https://android.googlesource.com/platform/external/qemu/+/emu-master-dev/android/android-emu/android/main-common.c)).
+This doesn't change the host guard reserve. The harness builds the test APKs
+first, then starts the emulator and foreground ADB server under a separate
+guard, runs the matrix, enables the debug IME with `en-DV`, allows the soft
+IME while the emulator keyboard is attached, and captures portrait/landscape
+screenshots under `.local/build-tools/tmp`. When KVM is unavailable to the
+current user, the script falls back to software emulation without changing
+device permissions.
+
+## Settings export and import
+
+Entry points are two preferences ("Export settings", "Import settings") in a
+new "Backup" category at the end of the main settings screen
+(`prefs.xml`, handled in `LatinIMESettings`). They use the Storage Access
+Framework (`ACTION_CREATE_DOCUMENT` with the suggested name
+`hackerskeyboard-settings.json`, and `ACTION_OPEN_DOCUMENT`, MIME
+`application/json`), so no storage permission is requested. File I/O runs on a
+background thread.
+
+Format (`SettingsBackup`, plain Java plus `org.json`): a JSON object with
+`format` (`hackerskeyboard-settings`), `format_version` (1), `app_package`,
+`app_version_name`, `app_version_code`, and `preferences`, a map of key to
+`{"type": ..., "value": ...}`. Types are `boolean`, `int`, `long`, `float`,
+`string` and `string_set` (JSON array, sorted on export), so import restores
+exact `SharedPreferences` types. `app_package` is informational: a file from the
+upstream package can be imported into this fork.
+
+Exportable keys come from `SettingsBackupSchema`, which parses the `android:key`
+of every value-holding preference in `prefs.xml`, `prefs_view.xml`,
+`prefs_feedback.xml`, `prefs_actions.xml` and `prefs_for_debug.xml`
+(`CheckBoxPreference` is `boolean`, all other widgets store strings), plus
+`selected_languages` (enabled input languages; no widget). Excluded as non-settings:
+`input_language` (the language currently active, runtime state rewritten by
+`LanguageSwitcher.persist()` on every language switch), the legacy
+`full_keyboard_in_portrait` constant that no preference screen defines, and
+anything else not in the XML definitions (for example keys left by older
+versions). Display-only rows (`label_version`, `input_connection_info`) hold no
+value.
+
+Import validates the whole file before writing: size at most 1 MiB (checked while
+reading), valid JSON, matching `format`, `format_version` equal to 1, every entry
+(known or unknown) has a valid type with a matching value, and each known key has
+exactly the type its preference defines. Any failure changes nothing and shows an
+error toast. Keys not in the schema are skipped and counted in the result toast.
+Values are applied in a single `Editor.commit()`. Keys absent from the file keep
+their current value (import does not reset the others). Values are checked for
+type only, not range or enumeration; the keyboard already tolerates unparsable
+numeric strings through its default-value parsing. `LatinIME` listens to the same
+default `SharedPreferences` in this process and receives a change callback for
+each changed key, applying the existing reload and recreate flags
+(`GlobalKeyboardSettings`); the settings activity is then recreated so all
+widgets reread their values.
+
+Unit tests are in `app/src/test/.../SettingsBackupTest.java` (run
+`./scripts/build.sh testDebugUnitTest`). They cover round-trip typing, unknown
+key counting, container/entry/type validation, whole-file rejection and the size
+limit. Device behavior (picker flow, live keyboard refresh) is not yet verified.
 
 ## Validation still required
 
 - Guarded `assembleRelease` and `assembleDebugAndroidTest` builds pass. The
   release APK passes `python3 scripts/verify-apk.py`; inspect the final signed
   APK with the same command before publication.
-- Run the guarded API 35 emulator instrumentation matrix once the toolchain
-  has provisioned an emulator and system image (`scripts/setup-emulator.sh`
-  and `scripts/smoke-android.sh`).
+- Run the guarded API 34 AOSP instrumentation matrix for this pass. The API 35
+  device-specific edge-to-edge behavior remains unverified by this fallback.
 - Exercise Dvorak portrait and landscape, both web-entry modes with and
   without the settings key, and QWERTY on an emulator/device. Also rotate while
   the keyboard is open to verify cache recreation.

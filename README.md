@@ -1,6 +1,6 @@
 # Hacker's Keyboard — hulloanson fork
 
-This fork uses application ID `com.hulloanson`, supports Android 8.0 and newer, and targets Android 15. It removes the Tab key beside Space for English Dvorak in portrait orientation and gives that space to the Space key. Landscape and other layouts retain Tab. Release `1.41.2-hulloanson` is built, signed, and published. Hosted indexes, APK integrity, and signing fingerprints are verified; device validation is in progress.
+This fork uses application ID `com.hulloanson`, supports Android 8.0 and newer, and targets Android 15. It removes the Tab key beside Space for English Dvorak in portrait orientation and gives that space to the Space key. Landscape and other layouts retain Tab. Release `1.41.2-hulloanson` is built, signed, and published. Hosted indexes, APK integrity, and signing fingerprints are verified; device validation is in progress. Settings can be exported to and imported from a JSON file (Settings > Backup); see the app design doc.
 
 See [build scripts and resource guards](docs/build.md), [app design](docs/app-design.md), and the [development status](docs/development.md).
 

@@ -348,4 +348,22 @@
             />
     </PreferenceCategory>
 
+    <PreferenceCategory
+            android:title="@string/title_backup"
+            android:key="backup_settings">
+
+    <Preference
+            android:key="export_settings"
+            android:title="@string/title_export_settings"
+            android:summary="@string/summary_export_settings"
+            />
+
+    <Preference
+            android:key="import_settings"
+            android:title="@string/title_import_settings"
+            android:summary="@string/summary_import_settings"
+            />
+
+    </PreferenceCategory>
+
 </PreferenceScreen>

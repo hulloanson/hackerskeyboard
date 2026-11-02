@@ -11,10 +11,10 @@ fail() {
   exit 1
 }
 
-[[ $# -le 1 ]] || fail "usage: scripts/build.sh [assembleRelease|assembleDebug|assembleDebugAndroidTest|bundleRelease]"
+[[ $# -le 1 ]] || fail "usage: scripts/build.sh [assembleRelease|assembleDebug|assembleDebugAndroidTest|testDebugUnitTest|bundleRelease]"
 task="${1:-assembleRelease}"
 case "$task" in
-  assembleRelease|assembleDebug|assembleDebugAndroidTest|bundleRelease) ;;
+  assembleRelease|assembleDebug|assembleDebugAndroidTest|testDebugUnitTest|bundleRelease) ;;
   *) fail "unsupported build task: $task" ;;
 esac
 
