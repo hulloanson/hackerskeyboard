@@ -5,7 +5,8 @@ ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 # shellcheck source=scripts/env.sh
 source "$ROOT/scripts/env.sh"
 GUARD="$ROOT/scripts/resource_guard.py"
-AVD_NAME="hackerskeyboard-api35"
+SMOKE_API_LEVEL="${HK_SMOKE_API_LEVEL:-35}"
+AVD_NAME="hackerskeyboard-api${SMOKE_API_LEVEL}"
 EMULATOR_PORT="${HK_EMULATOR_PORT:-5558}"
 ADB_PORT="${HK_ADB_SERVER_PORT:-5038}"
 SERIAL="emulator-${EMULATOR_PORT}"
@@ -21,7 +22,7 @@ fail() {
 if [[ "${1:-}" != "--guarded" ]]; then
   "$ROOT/scripts/build.sh" assembleDebug
   "$ROOT/scripts/build.sh" assembleDebugAndroidTest
-  exec python3 "$GUARD" run --label 'API 35 instrumentation' \
+  exec python3 "$GUARD" run --label "API $SMOKE_API_LEVEL instrumentation" \
     --path "$ROOT" --path "$HK_BUILD_ROOT" -- bash "$0" --guarded
 fi
 shift
@@ -30,7 +31,8 @@ shift
 [[ -x "$HK_GRADLE_BIN" ]] || fail "pinned Gradle is missing; run scripts/setup-build.sh first"
 [[ -x "$EMULATOR" ]] || fail "optional emulator is missing; run scripts/setup-emulator.sh first"
 [[ -x "$ADB_BIN" ]] || fail "Android platform-tools are missing; run scripts/setup-emulator.sh first"
-[[ -d "$ANDROID_USER_HOME/avd/$AVD_NAME.avd" ]] || fail "AVD $AVD_NAME is missing; run scripts/setup-emulator.sh first"
+[[ -d "$ANDROID_USER_HOME/avd/$AVD_NAME.avd" ]] \
+  || fail "AVD $AVD_NAME is missing; run HK_SMOKE_API_LEVEL=$SMOKE_API_LEVEL scripts/setup-emulator.sh first"
 mkdir -p "$TMPDIR"
 export ANDROID_AVD_HOME="$ANDROID_USER_HOME/avd"
 export ANDROID_ADB_SERVER_PORT="$ADB_PORT"
@@ -63,13 +65,13 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM HUP
 
-"${ADB[@]}" nodaemon server >"$TMPDIR/adb-server.log" 2>&1 &
+"${ADB[@]}" nodaemon server >"$TMPDIR/adb-server-api${SMOKE_API_LEVEL}.log" 2>&1 &
 ADB_SERVER_PID=$!
 
 server_ready=false
 for _ in $(seq 1 30); do
   if ! kill -0 "$ADB_SERVER_PID" 2>/dev/null; then
-    cat "$TMPDIR/adb-server.log" >&2
+    cat "$TMPDIR/adb-server-api${SMOKE_API_LEVEL}.log" >&2
     fail "foreground ADB server exited during startup"
   fi
   if ( : >"/dev/tcp/127.0.0.1/$ADB_PORT" ) 2>/dev/null; then
@@ -87,15 +89,15 @@ else
   echo "KVM is not accessible; using slow software emulation for this smoke run." >&2
 fi
 
-"$EMULATOR" -avd "$AVD_NAME" -port "$EMULATOR_PORT" -memory 1536 -cores 4 \
+"$EMULATOR" -avd "$AVD_NAME" -port "$EMULATOR_PORT" -lowram -memory 2048 -cores 4 \
   -no-window -no-audio -no-boot-anim -no-snapshot -accel "$ACCELERATION" \
-  -gpu swiftshader_indirect >"$TMPDIR/emulator-api35.log" 2>&1 &
+  -gpu swiftshader_indirect >"$TMPDIR/emulator-api${SMOKE_API_LEVEL}.log" 2>&1 &
 EMULATOR_PID=$!
 
 device_ready=false
 for _ in $(seq 1 120); do
   if ! kill -0 "$EMULATOR_PID" 2>/dev/null; then
-    cat "$TMPDIR/emulator-api35.log" >&2
+    cat "$TMPDIR/emulator-api${SMOKE_API_LEVEL}.log" >&2
     fail "emulator exited before becoming ready"
   fi
   if "${ADB[@]}" devices | awk -v serial="$SERIAL" '$1 == serial && $2 == "device" { found = 1 } END { exit !found }'; then
@@ -115,8 +117,9 @@ for _ in $(seq 1 180); do
   sleep 2
 done
 [[ "$booted" == true ]] || fail "emulator did not finish booting"
-[[ "$("${ADB[@]}" -s "$SERIAL" shell getprop ro.build.version.sdk | tr -d '\r')" == "35" ]] \
-  || fail "emulator is not running Android API 35"
+[[ "$("${ADB[@]}" -s "$SERIAL" shell getprop ro.build.version.sdk | tr -d '\r')" == "$SMOKE_API_LEVEL" ]] \
+  || fail "emulator is not running Android API $SMOKE_API_LEVEL"
+"${ADB[@]}" -s "$SERIAL" shell settings put secure show_ime_with_hard_keyboard 1
 
 APP_APK="$ROOT/app/build/outputs/apk/debug/app-debug.apk"
 TEST_APK="$ROOT/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk"
@@ -127,13 +130,13 @@ TEST_APK="$ROOT/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.ap
 "${ADB[@]}" -s "$SERIAL" install -r "$TEST_APK"
 "${ADB[@]}" -s "$SERIAL" shell am instrument -w -r \
   com.hulloanson.test/android.test.InstrumentationTestRunner \
-  | tee "$TMPDIR/instrumentation.log"
+  | tee "$TMPDIR/instrumentation-api${SMOKE_API_LEVEL}.log"
 if grep -Eq 'FAILURES!!!|INSTRUMENTATION_FAILED|INSTRUMENTATION_ABORTED' \
-    "$TMPDIR/instrumentation.log"; then
-  fail "instrumentation reported a test failure; see $TMPDIR/instrumentation.log"
+    "$TMPDIR/instrumentation-api${SMOKE_API_LEVEL}.log"; then
+  fail "instrumentation reported a test failure; see $TMPDIR/instrumentation-api${SMOKE_API_LEVEL}.log"
 fi
-grep -Eq 'OK \([0-9]+ tests?\)' "$TMPDIR/instrumentation.log" \
-  || fail "instrumentation did not report a passing test summary; see $TMPDIR/instrumentation.log"
+grep -Eq 'OK \([0-9]+ tests?\)' "$TMPDIR/instrumentation-api${SMOKE_API_LEVEL}.log" \
+  || fail "instrumentation did not report a passing test summary; see $TMPDIR/instrumentation-api${SMOKE_API_LEVEL}.log"
 
 IME_ID="com.hulloanson/org.pocketworkstation.pckeyboard.LatinIME"
 "${ADB[@]}" -s "$SERIAL" shell am force-stop com.hulloanson
@@ -147,9 +150,9 @@ IME_ID="com.hulloanson/org.pocketworkstation.pckeyboard.LatinIME"
 EOF
 "${ADB[@]}" -s "$SERIAL" shell \
   "run-as com.hulloanson cat shared_prefs/com.hulloanson_preferences.xml" \
-  >"$TMPDIR/dvorak-preferences.xml"
+  >"$TMPDIR/dvorak-preferences-api${SMOKE_API_LEVEL}.xml"
 grep -F '<string name="selected_languages">en_DV</string>' \
-  "$TMPDIR/dvorak-preferences.xml" >/dev/null \
+  "$TMPDIR/dvorak-preferences-api${SMOKE_API_LEVEL}.xml" >/dev/null \
   || fail "the en_DV language preference was not stored"
 "${ADB[@]}" -s "$SERIAL" logcat -c
 "${ADB[@]}" -s "$SERIAL" shell ime enable "$IME_ID"
@@ -159,7 +162,7 @@ grep -F '<string name="selected_languages">en_DV</string>' \
 sleep 2
 
 tap_main_edit_text() {
-  local hierarchy="$TMPDIR/main-window.xml"
+  local hierarchy="$TMPDIR/main-window-api${SMOKE_API_LEVEL}.xml"
   local bounds
   "${ADB[@]}" -s "$SERIAL" shell uiautomator dump /sdcard/main-window.xml >/dev/null
   "${ADB[@]}" -s "$SERIAL" shell cat /sdcard/main-window.xml \
@@ -188,11 +191,11 @@ PY
 }
 
 tap_main_edit_text
-"${ADB[@]}" -s "$SERIAL" shell dumpsys input_method >"$TMPDIR/input-method-portrait.txt"
+"${ADB[@]}" -s "$SERIAL" shell dumpsys input_method >"$TMPDIR/input-method-portrait-api${SMOKE_API_LEVEL}.txt"
 
 assert_ime_active_and_shown() {
   local dump="$1"
-  python3 - "$dump" "$IME_ID" <<'PY'
+  python3 - "$dump" "$IME_ID" "$SMOKE_API_LEVEL" <<'PY'
 import re
 import sys
 
@@ -218,30 +221,30 @@ if visibility_field:
     if not is_shown:
         raise SystemExit(f"IME is current but input window is not shown: {shown_fields}")
 else:
-    print("API35 dump exposes no input-shown flag; visual screenshot review is required.")
+    print("API%d dump exposes no input-shown flag; visual screenshot review is required." % int(sys.argv[3]))
 PY
 }
 
-assert_ime_active_and_shown "$TMPDIR/input-method-portrait.txt" \
-  || fail "fork IME is not current and visible in portrait; see $TMPDIR/input-method-portrait.txt"
-"${ADB[@]}" -s "$SERIAL" exec-out screencap -p >"$TMPDIR/hk-ime-portrait-api35.png"
+assert_ime_active_and_shown "$TMPDIR/input-method-portrait-api${SMOKE_API_LEVEL}.txt" \
+  || fail "fork IME is not current and visible in portrait; see $TMPDIR/input-method-portrait-api${SMOKE_API_LEVEL}.txt"
+"${ADB[@]}" -s "$SERIAL" exec-out screencap -p >"$TMPDIR/hk-ime-portrait-api${SMOKE_API_LEVEL}.png"
 
 "${ADB[@]}" -s "$SERIAL" shell settings put system accelerometer_rotation 0
 "${ADB[@]}" -s "$SERIAL" shell settings put system user_rotation 1
 sleep 5
 tap_main_edit_text
-"${ADB[@]}" -s "$SERIAL" shell dumpsys input_method >"$TMPDIR/input-method-landscape.txt"
-assert_ime_active_and_shown "$TMPDIR/input-method-landscape.txt" \
-  || fail "fork IME is not current and visible in landscape; see $TMPDIR/input-method-landscape.txt"
-"${ADB[@]}" -s "$SERIAL" exec-out screencap -p >"$TMPDIR/hk-ime-landscape-api35.png"
+"${ADB[@]}" -s "$SERIAL" shell dumpsys input_method >"$TMPDIR/input-method-landscape-api${SMOKE_API_LEVEL}.txt"
+assert_ime_active_and_shown "$TMPDIR/input-method-landscape-api${SMOKE_API_LEVEL}.txt" \
+  || fail "fork IME is not current and visible in landscape; see $TMPDIR/input-method-landscape-api${SMOKE_API_LEVEL}.txt"
+"${ADB[@]}" -s "$SERIAL" exec-out screencap -p >"$TMPDIR/hk-ime-landscape-api${SMOKE_API_LEVEL}.png"
 
 "${ADB[@]}" -s "$SERIAL" logcat -d -s PCKeyboard:I AndroidRuntime:E \
-  >"$TMPDIR/ime-runtime.log"
-grep -F 'onCreate(), os.version=' "$TMPDIR/ime-runtime.log" >/dev/null \
-  || fail "LatinIME service did not reach onCreate; see $TMPDIR/ime-runtime.log"
-if grep -F 'FATAL EXCEPTION' "$TMPDIR/ime-runtime.log" >/dev/null; then
-  cat "$TMPDIR/ime-runtime.log" >&2
-  fail "the IME service crashed; see $TMPDIR/ime-runtime.log"
+  >"$TMPDIR/ime-runtime-api${SMOKE_API_LEVEL}.log"
+grep -F 'onCreate(), os.version=' "$TMPDIR/ime-runtime-api${SMOKE_API_LEVEL}.log" >/dev/null \
+  || fail "LatinIME service did not reach onCreate; see $TMPDIR/ime-runtime-api${SMOKE_API_LEVEL}.log"
+if grep -F 'FATAL EXCEPTION' "$TMPDIR/ime-runtime-api${SMOKE_API_LEVEL}.log" >/dev/null; then
+  cat "$TMPDIR/ime-runtime-api${SMOKE_API_LEVEL}.log" >&2
+  fail "the IME service crashed; see $TMPDIR/ime-runtime-api${SMOKE_API_LEVEL}.log"
 fi
 
-echo "Instrumentation and IME service smoke passed. Screenshots and logs: $TMPDIR"
+echo "API $SMOKE_API_LEVEL instrumentation and IME service smoke passed. Screenshots and logs: $TMPDIR"
