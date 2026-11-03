@@ -2,7 +2,7 @@
 
 ## Status and decisions
 
-The persistent app and repository signing keys have been generated, verified, and backed up outside both repositories. Release `1.41.3-hulloanson` (`1041003`, settings export/import) is signed and published in repository commit `ed584f7`; the previous release `1.41.2-hulloanson` (`1041002`) was published in `79afb30`. Hosted v1/v2 indexes, APK hash, and both signer fingerprints have passed HTTPS verification. The lead agent cloned and bootstrapped repo_publish; it is ignored by the main repository. Keep it out of main-repository commits.
+The persistent app and repository signing keys have been generated, verified, and backed up outside both repositories. Release `1.41.3-hulloanson-1` (`104100301`, keyboard kept clear of system bars) is signed and published in repository commit `a916b4f`; `1.41.3-hulloanson` (`1041003`, settings export/import) was published in `ed584f7`; the previous release `1.41.2-hulloanson` (`1041002`) was published in `79afb30`. Hosted v1/v2 indexes, APK hash, and both signer fingerprints have passed HTTPS verification. The lead agent cloned and bootstrapped repo_publish; it is ignored by the main repository. Keep it out of main-repository commits.
 
 The repository is a signed binary F-Droid repository. Gradle produces an unsigned APK; scripts/signing.py signs it with the persistent app key; fdroidserver update builds and signs the repository indexes with the separate F-Droid key. Only the repo/ output directory is copied into repo_publish/ for Git publication. The private F-Droid workspace, its config.yml, metadata, keystore, and password files stay outside both Git repositories.
 
@@ -137,4 +137,4 @@ The selected raw endpoint does not need Pages configuration. If hosting later mo
 
 The APK signer uses the PKCS#12 store password for its private key automatically. Passing the same one-line password file for both password options makes apksigner consume that file twice and reach EOF; the script supplies the store password once. V4 sidecar generation is disabled because F-Droid distributes the APK itself.
 
-Published APK: `com.hulloanson_1041003.apk`, 2,488,871 bytes, SHA-256 `3bf36f813af2cd3596ec01b993b118eabcfe0b2301d1fded7fbe8931bebeb939`. Previous APK: `com.hulloanson_1041002.apk`, 2,468,391 bytes, SHA-256 `0463876bfc5dab86f4d33fec0cfa5d0012106d50112097a846c4cfb63adb95bf`.
+Published APK: `com.hulloanson_104100301.apk`, 2,488,871 bytes, SHA-256 `b9765222338745ea1b34288b1a0bb25f6153046902db05ba5b3f9d0e86b3735a`. Previous APK: `com.hulloanson_1041003.apk`, 2,488,871 bytes, SHA-256 `3bf36f813af2cd3596ec01b993b118eabcfe0b2301d1fded7fbe8931bebeb939`. Previous APK: `com.hulloanson_1041002.apk`, 2,468,391 bytes, SHA-256 `0463876bfc5dab86f4d33fec0cfa5d0012106d50112097a846c4cfb63adb95bf`.
