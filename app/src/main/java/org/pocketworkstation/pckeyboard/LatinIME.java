@@ -59,6 +59,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewParent;
 import android.view.Window;
+import android.view.WindowInsets;
 import android.view.WindowManager;
 import android.view.inputmethod.CompletionInfo;
 import android.view.inputmethod.EditorInfo;
@@ -360,6 +361,7 @@ public class LatinIME extends InputMethodService implements
         KeyboardSwitcher.init(this);
         super.onCreate();
         sInstance = this;
+        keepInputAboveNavigationBar();
         // setStatusIcon(R.drawable.ime_qwerty);
         mResources = getResources();
         final Configuration conf = mResources.getConfiguration();
@@ -713,6 +715,28 @@ public class LatinIME extends InputMethodService implements
         mConfigurationChanging = true;
         super.onConfigurationChanged(conf);
         mConfigurationChanging = false;
+    }
+
+    /**
+     * Android 15 draws apps targeting API 35 edge-to-edge, which includes this
+     * IME window: without padding, the bottom key row sits under the navigation
+     * bar (or the side keys under it in landscape). Pad the window content,
+     * which holds the extract, candidates, and input areas, by the system bars
+     * (status, navigation, taskbar, caption) and display cutout on every edge.
+     */
+    private void keepInputAboveNavigationBar() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.VANILLA_ICE_CREAM) return;
+        View content = getWindow().getWindow().findViewById(android.R.id.content);
+        if (content == null) return;
+        content.setOnApplyWindowInsetsListener(new View.OnApplyWindowInsetsListener() {
+            @Override
+            public WindowInsets onApplyWindowInsets(View v, WindowInsets insets) {
+                android.graphics.Insets bars = insets.getInsets(
+                        WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
+                v.setPadding(bars.left, bars.top, bars.right, bars.bottom);
+                return insets;
+            }
+        });
     }
 
     @Override

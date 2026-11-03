@@ -84,6 +84,12 @@ This runs F-Droid's metadata linter and a temporary JAR-signing check through th
 
 The generated app metadata pins AllowedAPKSigningKeys to the app certificate fingerprint, so F-Droid indexing fails closed if a release was signed with another app key. It records the version name and version code from each APK. fdroidserver 2.4.5 initially signs index-v1.jar (and optional index.jar) with a legacy algorithm for older clients. After `fdroid update`, the guarded release script re-signs those JARs with fdroidserver's modern apksigner path (`use_old_algs=False`), producing SHA-256 signatures compatible with the supported Android 26 and newer clients. It leaves the already-modern entry.jar signature intact. The script then uses the default strict JDK verifier and checks that every signed index has exactly one signer matching the persistent repository key; it verifies the v2 index digest from the signed entry as well. No JVM security-policy overrides are used.
 
+## Upstream tracking and versioning
+
+The fork tracks `upstream` (https://github.com/klausw/hackerskeyboard, branch `master`). Before each release, run `git fetch upstream` and rebase the fork's commits onto `upstream/master`, then force-push `master` with `--force-with-lease`. As of 2026-11-03, `upstream/master` is `9202d9d` (v1.41.1, versionCode 1041001).
+
+The fork keeps its own base version, currently 1.41.3, and appends `-hulloanson-N`. Each fork release bumps only N; the base changes only when a rebase brings in an upstream version greater than the current base (for example upstream 1.42 replaces base 1.41.3), and N then restarts at 1. The versionCode base is then upstream's versionCode. The versionCode is the base versionCode times 100 plus N (1.41.3 gives base 1041003, so `1.41.3-hulloanson-1` is 104100301). This stays above the earlier releases 1041002 (`1.41.2-hulloanson`) and 1041003 (`1.41.3-hulloanson`). N must stay below 100.
+
 ## Release and publishing sequence
 
 1. Build an unsigned release APK with the guarded build workflow.

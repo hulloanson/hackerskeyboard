@@ -12,8 +12,8 @@ android {
         applicationId 'com.hulloanson'
         minSdkVersion 26
         targetSdkVersion 35
-        versionCode 1041003
-        versionName '1.41.3-hulloanson'
+        versionCode 104100301
+        versionName '1.41.3-hulloanson-1'
         testInstrumentationRunner 'android.test.InstrumentationTestRunner'
         testApplicationId 'com.hulloanson.test'
 
