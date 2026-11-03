@@ -453,6 +453,7 @@ public class LatinKeyboardView extends LatinKeyboardBaseView {
             mExtension.setKeyboard(keyboard);
             mExtension.setExtensionType(true);
             mExtension.setPadding(0, 0, 0, 0);
+            mExtension.setSystemInsets(getPaddingLeft(), getPaddingRight(), 0);
             mExtension.setOnKeyboardActionListener(
                     new ExtensionKeyboardListener(getOnKeyboardActionListener()));
             mExtension.setPopupParent(this);

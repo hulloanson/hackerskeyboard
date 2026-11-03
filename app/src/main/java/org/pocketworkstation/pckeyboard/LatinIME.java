@@ -38,6 +38,7 @@ import android.content.res.XmlResourceParser;
 import android.content.pm.PackageManager;
 import android.inputmethodservice.InputMethodService;
 import android.media.AudioManager;
+import android.graphics.Rect;
 import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
@@ -156,6 +157,8 @@ public class LatinIME extends InputMethodService implements
 
     // private LatinKeyboardView mInputView;
     private LinearLayout mCandidateViewContainer;
+    /** System bar and cutout insets (left, top, right, bottom); empty before API 35. */
+    private final Rect mSystemInsets = new Rect();
     private CandidateView mCandidateView;
     private Suggest mSuggest;
     private CompletionInfo[] mCompletions;
@@ -719,10 +722,11 @@ public class LatinIME extends InputMethodService implements
 
     /**
      * Android 15 draws apps targeting API 35 edge-to-edge, which includes this
-     * IME window: without padding, the bottom key row sits under the navigation
-     * bar (or the side keys under it in landscape). Pad the window content,
-     * which holds the extract, candidates, and input areas, by the system bars
-     * (status, navigation, taskbar, caption) and display cutout on every edge.
+     * IME window: without insets, the bottom key row sits under the navigation
+     * bar (or the side keys under it in landscape). Track the system bar (status,
+     * navigation, taskbar, caption) and display cutout insets of each edge and keep
+     * the keys, candidates, and extract text clear of them, while the keyboard and
+     * candidate backgrounds still extend underneath the bars.
      */
     private void keepInputAboveNavigationBar() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.VANILLA_ICE_CREAM) return;
@@ -733,10 +737,37 @@ public class LatinIME extends InputMethodService implements
             public WindowInsets onApplyWindowInsets(View v, WindowInsets insets) {
                 android.graphics.Insets bars = insets.getInsets(
                         WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
-                v.setPadding(bars.left, bars.top, bars.right, bars.bottom);
+                mSystemInsets.set(bars.left, bars.top, bars.right, bars.bottom);
+                applySystemInsets();
                 return insets;
             }
         });
+    }
+
+    /**
+     * Applies the latest system insets: the window content keeps the top inset, and
+     * the side and bottom insets pad the keyboard, candidates, and extract views so
+     * their backgrounds reach the screen edge. Call after any of these views is
+     * (re)created. Does nothing before API 35.
+     */
+    void applySystemInsets() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.VANILLA_ICE_CREAM) return;
+        View content = getWindow().getWindow().findViewById(android.R.id.content);
+        if (content != null) {
+            content.setPadding(0, mSystemInsets.top, 0, 0);
+        }
+        View extract = getWindow().getWindow().findViewById(android.R.id.extractArea);
+        if (extract != null) {
+            extract.setPadding(mSystemInsets.left, 0, mSystemInsets.right, 0);
+        }
+        if (mCandidateViewContainer != null) {
+            mCandidateViewContainer.setPadding(mSystemInsets.left, 0, mSystemInsets.right, 0);
+        }
+        LatinKeyboardView inputView = mKeyboardSwitcher.getInputView();
+        if (inputView != null) {
+            inputView.setSystemInsets(
+                    mSystemInsets.left, mSystemInsets.right, mSystemInsets.bottom);
+        }
     }
 
     @Override
@@ -746,6 +777,7 @@ public class LatinIME extends InputMethodService implements
         mKeyboardSwitcher.makeKeyboards(true);
         mKeyboardSwitcher.setKeyboardMode(KeyboardSwitcher.MODE_TEXT, 0,
                 shouldShowVoiceButton(getCurrentInputEditorInfo()));
+        applySystemInsets();
         return mKeyboardSwitcher.getInputView();
     }
 
@@ -778,6 +810,7 @@ public class LatinIME extends InputMethodService implements
             mCandidateView.setPadding(0, 0, 0, 0);
             mCandidateView.setService(this);
             setCandidatesView(mCandidateViewContainer);
+            applySystemInsets();
         }
         return mCandidateViewContainer;
     }
@@ -2516,6 +2549,7 @@ public class LatinIME extends InputMethodService implements
                         ((ViewGroup) p).removeView(view);
                     }
                     setInputView(mKeyboardSwitcher.getInputView());
+                    applySystemInsets();
                 }
                 setCandidatesViewShown(true);
                 updateInputViewShown();

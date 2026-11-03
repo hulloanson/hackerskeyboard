@@ -271,6 +271,8 @@ public class LatinKeyboardBaseView extends View implements PointerTracker.UIProx
     private final Rect mPadding;
     private final Rect mClipRegion = new Rect(0, 0, 0, 0);
     private int mViewWidth;
+    /** Left system-bar inset, included in the view padding; touch x is relative to the keys. */
+    private int mInsetLeft;
     // This map caches key label text height in pixel as value and key label text size as map key.
     private final HashMap<Integer, Integer> mTextHeightCache = new HashMap<Integer, Integer>();
     // Distance from horizontal center of the key, proportional to key label text height.
@@ -817,8 +819,21 @@ public class LatinKeyboardBaseView extends View implements PointerTracker.UIProx
         return mKeyDetector.isProximityCorrectionEnabled();
     }
 
+    /**
+     * Pads the view by the system bar and cutout insets while its own background keeps
+     * covering the whole view. Keys are scaled to fit between the left and right insets.
+     */
+    public void setSystemInsets(int left, int right, int bottom) {
+        mInsetLeft = left;
+        setPadding(left, 0, right, bottom);
+    }
+
     @Override
     public void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+        if (mKeyboard != null) {
+            mKeyboard.setKeyboardWidth(
+                    MeasureSpec.getSize(widthMeasureSpec) - getPaddingLeft() - getPaddingRight());
+        }
         // Round up a little
         if (mKeyboard == null) {
             setMeasuredDimension(
@@ -898,7 +913,7 @@ public class LatinKeyboardBaseView extends View implements PointerTracker.UIProx
     private void onBufferDraw(Canvas canvas) {
         //Log.i(TAG, "onBufferDraw called");
         if (/*mBuffer == null ||*/ mKeyboardChanged) {
-            mKeyboard.setKeyboardWidth(mViewWidth);
+            mKeyboard.setKeyboardWidth(mViewWidth - getPaddingLeft() - getPaddingRight());
 //            if (mBuffer == null || mKeyboardChanged &&
 //                    (mBuffer.getWidth() != getWidth() || mBuffer.getHeight() != getHeight())) {
 //                // Make sure our bitmap is at least 1x1
@@ -1241,8 +1256,8 @@ public class LatinKeyboardBaseView extends View implements PointerTracker.UIProx
             lp.height = popupHeight;
         }
 
-        int popupPreviewX = key.x - (popupWidth - key.width) / 2;
-        int popupPreviewY = key.y - popupHeight + mPreviewOffset;
+        int popupPreviewX = key.x + getPaddingLeft() - (popupWidth - key.width) / 2;
+        int popupPreviewY = key.y + getPaddingTop() - popupHeight + mPreviewOffset;
 
         mHandler.cancelDismissPreview();
         if (mOffsetInWindow == null) {
@@ -1482,10 +1497,13 @@ public class LatinKeyboardBaseView extends View implements PointerTracker.UIProx
         final int y = mShowPreview && isOneRowKeys(miniKeys) ? mPopupPreviewDisplayedY : popupY;
 
         int adjustedX = x;
-        if (x < 0) {
-            adjustedX = 0;
-        } else if (x > (getMeasuredWidth() - mMiniKeyboardContainer.getMeasuredWidth())) {
-            adjustedX = getMeasuredWidth() - mMiniKeyboardContainer.getMeasuredWidth();
+        final int minX = getPaddingLeft();
+        final int maxX = getMeasuredWidth() - getPaddingRight()
+                - mMiniKeyboardContainer.getMeasuredWidth();
+        if (x < minX) {
+            adjustedX = minX;
+        } else if (x > maxX) {
+            adjustedX = maxX;
         }
         // Log.i(TAG, "x=" + x + " y=" + y + " adjustedX=" + adjustedX + " getMeasuredWidth()=" + getMeasuredWidth());
         mMiniKeyboardOriginX = adjustedX + mMiniKeyboardContainer.getPaddingLeft() - mWindowOffset[0];
@@ -1504,8 +1522,9 @@ public class LatinKeyboardBaseView extends View implements PointerTracker.UIProx
         // Inject down event on the key to mini keyboard.
         long eventTime = SystemClock.uptimeMillis();
         mMiniKeyboardPopupTime = eventTime;
-        MotionEvent downEvent = generateMiniKeyboardMotionEvent(MotionEvent.ACTION_DOWN, popupKey.x
-                + popupKey.width / 2, popupKey.y + popupKey.height / 2, eventTime);
+        MotionEvent downEvent = generateMiniKeyboardMotionEvent(MotionEvent.ACTION_DOWN,
+                popupKey.x + getPaddingLeft() + popupKey.width / 2,
+                popupKey.y + getPaddingTop() + popupKey.height / 2, eventTime);
         mMiniKeyboard.onTouchEvent(downEvent);
         downEvent.recycle();
 
@@ -1632,7 +1651,7 @@ public class LatinKeyboardBaseView extends View implements PointerTracker.UIProx
         final long eventTime = me.getEventTime();
         final int index = me.getActionIndex();
         final int id = me.getPointerId(index);
-        final int x = (int)me.getX(index);
+        final int x = (int)me.getX(index) - mInsetLeft;
         final int y = (int)me.getY(index);
 
         // Needs to be called after the gesture detector gets a turn, as it may have
@@ -1693,7 +1712,7 @@ public class LatinKeyboardBaseView extends View implements PointerTracker.UIProx
             if (!mIgnoreMove) {
                 for (int i = 0; i < pointerCount; i++) {
                     PointerTracker tracker = getPointerTracker(me.getPointerId(i));
-                    tracker.onMoveEvent((int)me.getX(i), (int)me.getY(i), eventTime);
+                    tracker.onMoveEvent((int)me.getX(i) - mInsetLeft, (int)me.getY(i), eventTime);
                 }
             }
         } else {

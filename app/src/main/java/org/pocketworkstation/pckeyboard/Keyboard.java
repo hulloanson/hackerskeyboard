@@ -288,6 +288,8 @@ public class Keyboard {
         /** X coordinate of the key in the keyboard layout */
         public int x;
         private float realX;
+        /** Width before {@link Keyboard#setKeyboardWidth} rescaling; 0 until first rescaled. */
+        private int unscaledWidth;
         /** Y coordinate of the key in the keyboard layout */
         public int y;
         /** The current pressed state of this key */
@@ -1269,7 +1271,9 @@ public class Keyboard {
         float scale = (float) newWidth / mDisplayWidth;
         Log.i("PCKeyboard", "Rescaling keyboard: " + mTotalWidth + " => " + newWidth);
         for (Key key : mKeys) {
+            if (key.unscaledWidth == 0) key.unscaledWidth = key.width;
             key.x = Math.round(key.realX * scale);
+            key.width = Math.round(key.unscaledWidth * scale);
         }
         mTotalWidth = newWidth;
     }
